@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MHFU Recomp</string>
+    <string name="title">Monster Hunter Freedom Unite Recompiled</string>
+    <string name="choose_iso">Choose ISO</string>
+    <string name="start_again">Start again</string>
+    <string name="crashed">The game stopped unexpectedly. The end of its log:\n</string>
+    <string name="first_start">To play, choose your own copy of Monster Hunter Freedom Unite: the European release (ULES01213, v1.01), dumped from your UMD as an .iso file.</string>
+    <string name="starting">Starting…\n\nThe first start copies the game\'s data from your ISO (about 750 MB), which takes a minute or two.</string>
+    <string name="cannot_open">Can\'t open your ISO any more (moved or deleted?). Choose it again.</string>
+</resources>

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -10,6 +11,7 @@
 #include <fcntl.h>
 #include <spawn.h>
 #include <string_view>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -21,6 +23,67 @@ namespace mhfu {
 namespace disc {
 namespace {
 
+// Reads an open file at positions (pread), for open_iso.
+class FdBuffer : public std::streambuf {
+ public:
+  explicit FdBuffer(int fd) : fd_(fd) {}
+
+ protected:
+  int_type underflow() override {
+    if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
+    const auto got = ::pread(fd_, buffer_.data(), buffer_.size(), position_);
+    if (got <= 0) return traits_type::eof();
+    setg(buffer_.data(), buffer_.data(), buffer_.data() + got);
+    position_ += got;
+    return traits_type::to_int_type(*gptr());
+  }
+  // Large reads (the game's files, copied out) go straight to the file.
+  std::streamsize xsgetn(char* out, std::streamsize count) override {
+    std::streamsize done = std::min<std::streamsize>(count, egptr() - gptr());
+    if (done > 0) {
+      std::memcpy(out, gptr(), static_cast<std::size_t>(done));
+      gbump(static_cast<int>(done));
+    }
+    while (done < count) {
+      const auto got = ::pread(fd_, out + done, static_cast<std::size_t>(count - done), position_);
+      if (got <= 0) break;
+      position_ += got;
+      done += got;
+    }
+    return done;
+  }
+  pos_type seekoff(off_type offset, std::ios_base::seekdir from, std::ios_base::openmode) override {
+    off_type base = position_ - (egptr() - gptr());  // where reading is
+    if (from == std::ios_base::beg) {
+      base = 0;
+    } else if (from == std::ios_base::end) {
+      struct stat status{};
+      if (::fstat(fd_, &status) != 0) return pos_type(off_type(-1));
+      base = status.st_size;
+    }
+    if (base + offset < 0) return pos_type(off_type(-1));
+    setg(nullptr, nullptr, nullptr);
+    position_ = base + offset;
+    return pos_type(position_);
+  }
+  pos_type seekpos(pos_type position, std::ios_base::openmode which) override {
+    return seekoff(off_type(position), std::ios_base::beg, which);
+  }
+
+ private:
+  int fd_;
+  off_t position_{};  // in the file, of the end of what is buffered
+  std::array<char, 1U << 16U> buffer_{};
+};
+
+class FdStream : public std::istream {
+ public:
+  explicit FdStream(int fd) : std::istream(nullptr), buffer_(fd) { rdbuf(&buffer_); }
+
+ private:
+  FdBuffer buffer_;
+};
+
 // A folder's entry on the disc.
 struct Entry {
   std::string name;
@@ -29,7 +92,7 @@ struct Entry {
   bool folder{};
 };
 
-bool read_folder(std::ifstream& iso, std::uint32_t sector, std::uint32_t size, std::vector<Entry>& entries) {
+bool read_folder(std::istream& iso, std::uint32_t sector, std::uint32_t size, std::vector<Entry>& entries) {
   std::vector<std::uint8_t> records;
   if (!read_sectors(iso, sector, size, records)) return false;
   for (std::size_t offset = 0; offset < records.size();) {
@@ -51,7 +114,7 @@ bool read_folder(std::ifstream& iso, std::uint32_t sector, std::uint32_t size, s
   return true;
 }
 
-bool list_folder(std::ifstream& iso, const Entry& folder, const std::string& prefix, std::vector<File>& files,
+bool list_folder(std::istream& iso, const Entry& folder, const std::string& prefix, std::vector<File>& files,
                  int depth) {
   std::vector<Entry> entries;
   if (depth > 8 || !read_folder(iso, folder.sector, folder.size, entries)) return false;
@@ -65,7 +128,7 @@ bool list_folder(std::ifstream& iso, const Entry& folder, const std::string& pre
 }
 
 // The disc's root folder, from its primary volume descriptor.
-std::optional<Entry> root_folder(std::ifstream& iso) {
+std::optional<Entry> root_folder(std::istream& iso) {
   std::vector<std::uint8_t> descriptor;
   if (!read_sectors(iso, 16U, sector_size, descriptor) || descriptor[0] != 1U ||
       std::memcmp(&descriptor[1], "CD001", 5) != 0)
@@ -74,7 +137,7 @@ std::optional<Entry> root_folder(std::ifstream& iso) {
 }
 
 // The file at `path` (e.g. PSP_GAME/PARAM.SFO) on the disc.
-std::optional<Entry> look_up(std::ifstream& iso, Entry folder, std::string_view path) {
+std::optional<Entry> look_up(std::istream& iso, Entry folder, std::string_view path) {
   while (!path.empty()) {
     const auto slash = path.find('/');
     const auto name = path.substr(0, slash);
@@ -110,18 +173,30 @@ std::string described(const fs::path& path, const Check& result) {
 
 }  // namespace
 
+std::unique_ptr<std::istream> open_iso(const fs::path& path) {
+  constexpr std::string_view open_file = "/proc/self/fd/";
+  const auto text = path.string();
+  if (text.starts_with(open_file)) {
+    int fd = -1;
+    const auto* end = text.data() + text.size();
+    const auto [parsed, error] = std::from_chars(text.data() + open_file.size(), end, fd);
+    if (error == std::errc() && parsed == end && fd >= 0) return std::make_unique<FdStream>(fd);
+  }
+  return std::make_unique<std::ifstream>(path, std::ios::binary);
+}
+
 std::uint32_t le32(const std::uint8_t* bytes) {
   return bytes[0] | (bytes[1] << 8U) | (bytes[2] << 16U) | (static_cast<std::uint32_t>(bytes[3]) << 24U);
 }
 
-bool read_sectors(std::ifstream& iso, std::uint32_t sector, std::size_t size, std::vector<std::uint8_t>& out) {
+bool read_sectors(std::istream& iso, std::uint32_t sector, std::size_t size, std::vector<std::uint8_t>& out) {
   out.resize(size);
   iso.clear();
   iso.seekg(static_cast<std::streamoff>(sector) * sector_size);
   return static_cast<bool>(iso.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(size)));
 }
 
-bool list_files(std::ifstream& iso, std::vector<File>& files) {
+bool list_files(std::istream& iso, std::vector<File>& files) {
   const auto root = root_folder(iso);
   return root && list_folder(iso, *root, "", files, 0);
 }
@@ -184,7 +259,8 @@ std::string Check::problem(const fs::path& path) const {
 
 Check check(const fs::path& path) {
   Check result;
-  std::ifstream iso(path, std::ios::binary);
+  const auto stream = open_iso(path);
+  auto& iso = *stream;
   if (!iso) return result;
   std::array<char, 8> magic{};
   if (!iso.read(magic.data(), magic.size())) {
