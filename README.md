@@ -26,7 +26,7 @@ The project is currently a **Linux-first prototype**. It can boot, create a hunt
 
 This project provides a recompilation framework and independently written support code; it is **not the game**, and this repository contains no game code or data. To play, you must supply files from a copy of *Monster Hunter Freedom Unite* that you obtained lawfully and may use under the laws that apply to you. This project does not support, provide, link to, or encourage unauthorized copies of the game.
 
-Before publishing a fork, release, or build, remove and do not redistribute any proprietary game content: ISO images, executables, asset archives, extracted files, saves containing game assets, or generated output derived from them — including a built `mhfu` binary, which contains the translated game code, and the decompiled code the research tools produce. The project's own license, when added, applies only to original project code and materials; it does not grant rights in any third-party game content.
+Before publishing a fork, release, or build, remove and do not redistribute any proprietary game content: ISO images, executables, asset archives, extracted files, saves containing game assets, or generated output derived from them — including a built `mhfu` binary, which contains the translated game code, and the decompiled code the research tools produce. The project's own license applies only to original project code and materials; it does not grant rights in any third-party game content.
 
 ## Current status
 
@@ -148,4 +148,6 @@ Please do not upload, attach, or commit any game ISO, executable, asset archive,
 
 ## License
 
-A project license has not yet been added. Third-party components retain their own licenses and notices.
+MHFU Recomp's own code is licensed under the [GNU General Public License v3.0](LICENSE). It builds on psprism and aemu_postoffice, which are GPL-3.0 as well. Third-party components keep their own licenses and notices; the fonts in `recomp/fonts/` are under the SIL Open Font License.
+
+The license covers only this project's original code and materials. It grants no rights in *Monster Hunter Freedom Unite* or any other CAPCOM content, which you must supply from your own copy.
