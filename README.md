@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  Linux &middot; Android &middot; EU release (<code>ULES01213</code> v1.01) &middot; Early playable
+  Linux &middot; Android &middot; EU release (<code>ULES01213</code> v1.01) &middot; <a href="https://github.com/kevin11dev/MHFU-Recomp/releases/latest">Version 1.0</a>
 </p>
 
 # Monster Hunter Freedom Unite Recompiled
 
-MHFU Recomp translates the PSP executable for **Monster Hunter Freedom Unite** into C++ on your own machine, then runs it with native implementations of the PSP services the game needs. It is not a conventional emulator: the game code is compiled ahead of time for your computer, while an interpreter remains available only as a fallback for code that has not been translated.
+MHFU Recomp translates the PSP executable for **Monster Hunter Freedom Unite** into C++ on your own machine, then runs it with native implementations of the PSP services the game needs. It is not a conventional emulator: the game code is compiled ahead of time for your computer, while an interpreter remains available only as a fallback for code that has not been translated. On Android, which has no compiler to build it with, the app runs the game's code in that interpreter instead.
 
-The project is currently an **early prototype** for Linux, with an Android app. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. Expect rough edges while development continues.
+**Version 1.0** runs on Linux (and Windows through WSL) and on Android phones and tablets. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. It is still young, so expect rough edges while development continues.
 
 > **You need your own legally obtained European copy of Monster Hunter Freedom Unite** — release `ULES01213`, version 1.01 — dumped from your UMD as an ISO. Other regions and revisions are not supported yet, and neither are compressed images (`.cso`, `.chd`): use a plain `.iso`.
 
@@ -34,18 +34,22 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 | --- | --- |
 | Booting, menus, character creation, village, quests, saving and loading | A native Windows build |
 | Native SDL2 + OpenGL ES renderer at 720p or 1080p | PSP-style system save/load dialogs (accepted automatically for now) |
+| Widescreen: more of the world on screens wider than the PSP's, instead of black bars | |
 | Music, sound effects, and video playback (with FFmpeg) | Further audio testing and polish |
 | 30 fps or an optional true 60 fps mode | The game's downloadable event-quest service |
-| Optional frame interpolation | Broader hardware and distribution testing |
+| Optional frame interpolation | Broader hardware, distribution, and phone testing |
 | Keyboard and controller support; the launcher also works with a mouse | |
 | Free right-stick camera in hunting areas | |
 | Optional hold-to-gather quality-of-life feature | |
 | Online ad-hoc multiplayer, including PPSSPP compatibility | |
-| Android app for phones and tablets, played with a controller | Touch controls on Android |
+| Android app for phones and tablets, played with a controller | Touch controls, and saves you can back up, on Android |
 
 ## Play
 
-### Requirements
+- **Linux, SteamOS, and Windows (WSL):** `play.sh` builds the game from your ISO on your own machine; see below.
+- **Android:** download the APK from the [latest release](https://github.com/kevin11dev/MHFU-Recomp/releases/latest); no computer needed. See [Android](#android).
+
+### Linux
 
 - A Linux PC, or Windows through WSL
 - Your own MHFU EU (`ULES01213` v1.01) ISO
@@ -110,7 +114,9 @@ To update, install the new APK over the old one; your saves stay. Uninstalling t
 | L / R | Q / E | Shoulder buttons |
 | Start / Select | Enter / Right Shift | Start / Back |
 
-The launcher contains the full controls screen and settings for display mode, resolution, widescreen, frame rate, interpolation, the right-stick camera, hold-to-gather, and multiplayer. Each optional feature is off until you turn it on, so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
+On Android, play with a controller (the last column). As on the PSP, tapping L turns the camera to face where your hunter faces, and holding it opens the item bar.
+
+The launcher contains the full controls screen and settings for display mode, resolution, widescreen, frame rate, interpolation, the right-stick camera, hold-to-gather, and multiplayer. Each optional feature is off until you turn it on (except widescreen, which is on by default on Android), so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
 
 ## Multiplayer
 
@@ -127,7 +133,7 @@ The service is community-run, so availability can change. If no server answers, 
 
 MHFU Recomp builds on [psprism](https://github.com/anthonyhfm/psprism), a PSP static recompilation framework. It translates the game's Allegrex CPU code into C++, compiles that code locally, and supplies a native PSP runtime for threads, disc I/O, graphics, audio, fonts, save data, video, input, and networking.
 
-This repository adds the MHFU-specific pieces: fixes to the translator, the title's code map, a Linux SDL2/OpenGL ES host, a launcher, font and timer support, video and audio fixes, online ad-hoc networking, an enhanced camera, and optional gameplay features. The build takes the game's program from the ISO you provide, checks it against the version this project is made for, and the game reads its data from your copy as it runs; none of it is fetched by the build system.
+This repository adds the MHFU-specific pieces: fixes to the translator, the title's code map, an SDL2/OpenGL ES host for Linux and Android, the Android app, a launcher, font and timer support, video and audio fixes, online ad-hoc networking, an enhanced camera, and optional gameplay features. The build takes the game's program from the ISO you provide, checks it against the version this project is made for, and the game reads its data from your copy as it runs; none of it is fetched by the build system.
 
 Technical notes are in [recomp/README.md](recomp/README.md), and the reverse-engineering workflow is documented in [docs/decompilation.md](docs/decompilation.md).
 
@@ -149,7 +155,7 @@ To work on the native port, start with [`recomp/README.md`](recomp/README.md). [
 
 ## Contributing
 
-Bug reports, compatibility testing, and reverse-engineering findings are welcome. When reporting an issue, include your Linux distribution, graphics hardware and driver (or your phone's model), the launcher settings you use (frame rate, frame interpolation, right-stick camera), and clear steps to reproduce the problem. The terminal output from `./play.sh` helps too.
+Bug reports, compatibility testing, and reverse-engineering findings are welcome. When reporting an issue, include your Linux distribution, graphics hardware and driver (or your phone's model), the launcher settings you use (frame rate, frame interpolation, right-stick camera), and clear steps to reproduce the problem. The terminal output from `./play.sh` helps too; on Android, the end of the log the app shows when the game stops unexpectedly.
 
 Please do not upload, attach, or commit any game ISO, executable, asset archive, extracted game data, decompiled game code, or save containing proprietary game content.
 
@@ -159,6 +165,8 @@ Please do not upload, attach, or commit any game ISO, executable, asset archive,
 - [PPSSPP](https://www.ppsspp.org/) and [pspautotests](https://github.com/hrydgard/pspautotests) — PSP behavior and font-metric reference material
 - [aemu_postoffice](https://github.com/Kethen/aemu_postoffice) (GPL-3.0) and [ENet](https://github.com/zpl-c/enet) (MIT) — ad-hoc multiplayer protocol support; thanks to the people who run the public servers
 - [stb](https://github.com/nothings/stb) — image and font support
+- [SDL2](https://www.libsdl.org/) (zlib License) — window, input, and audio, and the Android app's activity
+- [FFmpeg](https://ffmpeg.org/) (LGPL-2.1) — video decoding; the Android app includes its H.264 decoder
 - [CWCheat Database Plus](https://github.com/Saramagrean/CWCheat-Database-Plus-) — basis for the 60 fps patch
 - [Liberation Fonts](https://github.com/liberationfonts) and [Cinzel](https://github.com/NDISCOVER/Cinzel) (SIL Open Font License) — font resources
 
