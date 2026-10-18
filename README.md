@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  Linux &middot; EU release (<code>ULES01213</code> v1.01) &middot; Early playable
+  Linux &middot; Android &middot; EU release (<code>ULES01213</code> v1.01) &middot; Early playable
 </p>
 
 # Monster Hunter Freedom Unite Recompiled
 
 MHFU Recomp translates the PSP executable for **Monster Hunter Freedom Unite** into C++ on your own machine, then runs it with native implementations of the PSP services the game needs. It is not a conventional emulator: the game code is compiled ahead of time for your computer, while an interpreter remains available only as a fallback for code that has not been translated.
 
-The project is currently a **Linux-first prototype**. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. Expect rough edges while development continues.
+The project is currently an **early prototype** for Linux, with an Android app. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. Expect rough edges while development continues.
 
 > **You need your own legally obtained European copy of Monster Hunter Freedom Unite** — release `ULES01213`, version 1.01 — dumped from your UMD as an ISO. Other regions and revisions are not supported yet, and neither are compressed images (`.cso`, `.chd`): use a plain `.iso`.
 
@@ -32,7 +32,7 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 
 | Available now | Still in progress |
 | --- | --- |
-| Booting, menus, character creation, village, quests, saving and loading | Native Windows and Android builds |
+| Booting, menus, character creation, village, quests, saving and loading | A native Windows build |
 | Native SDL2 + OpenGL ES renderer at 720p or 1080p | PSP-style system save/load dialogs (accepted automatically for now) |
 | Music, sound effects, and video playback (with FFmpeg) | Further audio testing and polish |
 | 30 fps or an optional true 60 fps mode | The game's downloadable event-quest service |
@@ -41,6 +41,7 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 | Free right-stick camera in hunting areas | |
 | Optional hold-to-gather quality-of-life feature | |
 | Online ad-hoc multiplayer, including PPSSPP compatibility | |
+| Android app for phones and tablets, played with a controller | Touch controls on Android |
 
 ## Play
 
@@ -84,6 +85,20 @@ distrobox enter mhfu
 
 Then run the commands above inside that container. On Windows, run `wsl --install` in PowerShell, restart, open the Ubuntu terminal, and run the Linux steps there. Your Windows drives are available under `/mnt/c`, so the ISO can stay where it is.
 
+### Android
+
+The Android app is on the [Releases](https://github.com/kevin11dev/MHFU-Recomp/releases) page: nothing to build, and no computer needed. It contains no game code; it plays your own ISO, running the game's program in psprism's interpreter.
+
+- A phone or tablet with Android 10 or newer and a 64-bit ARM processor (nearly every recent phone)
+- A controller, Bluetooth or USB: there are no touch controls yet
+- Your own MHFU EU (`ULES01213` v1.01) ISO on the device, and about 800 MB of free space for a copy of the game's data
+
+1. On your phone, download `MHFU-Recomp-<version>.apk` from the latest release and open it. The first time, Android asks you to allow your browser or file manager to install apps.
+2. Open **MHFU Recomp** and choose your ISO. The first start copies the game's data out of it, which takes a minute or two.
+3. The launcher opens; use the controller from there. The game fills the screen: **Widescreen** (in Settings) shows more of the world at the sides instead of black bars.
+
+To update, install the new APK over the old one; your saves stay. Uninstalling the app deletes its saves.
+
 ## Controls
 
 | PSP control | Keyboard | Controller |
@@ -95,7 +110,7 @@ Then run the commands above inside that container. On Windows, run `wsl --instal
 | L / R | Q / E | Shoulder buttons |
 | Start / Select | Enter / Right Shift | Start / Back |
 
-The launcher contains the full controls screen and settings for display mode, resolution, frame rate, interpolation, the right-stick camera, hold-to-gather, and multiplayer. Each optional feature is off until you turn it on, so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
+The launcher contains the full controls screen and settings for display mode, resolution, widescreen, frame rate, interpolation, the right-stick camera, hold-to-gather, and multiplayer. Each optional feature is off until you turn it on, so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
 
 ## Multiplayer
 
@@ -122,6 +137,7 @@ Technical notes are in [recomp/README.md](recomp/README.md), and the reverse-eng
 | --- | --- |
 | `play.sh` | Finds a compatible ISO, builds the project, and starts the game |
 | `recomp/` | Native host code, psprism patch, build scripts, launcher, and features |
+| `android/` | The Android app, built from `recomp/interpreter/` ([docs/android.md](docs/android.md)) |
 | `re/` | Function names, signatures, structures, and reverse-engineering notes |
 | `tools/` | Ghidra automation, overlay extraction, and layout-generation tools |
 | `docs/` | Recompilation and feature-development documentation |
@@ -133,7 +149,7 @@ To work on the native port, start with [`recomp/README.md`](recomp/README.md). [
 
 ## Contributing
 
-Bug reports, compatibility testing, and reverse-engineering findings are welcome. When reporting an issue, include your Linux distribution, graphics hardware and driver, the launcher settings you use (frame rate, frame interpolation, right-stick camera), and clear steps to reproduce the problem. The terminal output from `./play.sh` helps too.
+Bug reports, compatibility testing, and reverse-engineering findings are welcome. When reporting an issue, include your Linux distribution, graphics hardware and driver (or your phone's model), the launcher settings you use (frame rate, frame interpolation, right-stick camera), and clear steps to reproduce the problem. The terminal output from `./play.sh` helps too.
 
 Please do not upload, attach, or commit any game ISO, executable, asset archive, extracted game data, decompiled game code, or save containing proprietary game content.
 

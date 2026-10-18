@@ -326,10 +326,10 @@ index 0000000..da2157f
 +}  // namespace refract::adhoc
 diff --git a/refract/include/refract/frontend.hpp b/refract/include/refract/frontend.hpp
 new file mode 100644
-index 0000000..41f6447
+index 0000000..df9a4ad
 --- /dev/null
 +++ b/refract/include/refract/frontend.hpp
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,76 @@
 +#pragma once
 +
 +// Extras of the SDL2 + OpenGL ES host (src/host/sdl_gles.cpp) for an entry point to use before
@@ -368,6 +368,12 @@ index 0000000..41f6447
 +
 +// Shows how many frames a second the game draws, in the top-left corner of the window.
 +void set_fps_counter(bool shown);
++
++// Widescreen: in a window wider than the PSP's 480:272, the game's 3D world is drawn wider to
++// fill it, at the same size (more of it at the sides), instead of black bars; its 2D (the HUD,
++// menus) stays in the middle, and what covers the whole screen flat (fades, backgrounds) is
++// stretched.
++void set_widescreen(bool enabled);
 +
 +// Frame interpolation: shows frames in between the game's, with its 3D drawing moved part of
 +// the way, up to `pictures_per_second` pictures a second (and at most one per refresh of the
@@ -2430,10 +2436,10 @@ index 0000000..410f06e
 +} // namespace refract::host
 diff --git a/refract/src/host/sdl_gles.cpp b/refract/src/host/sdl_gles.cpp
 new file mode 100644
-index 0000000..4940dee
+index 0000000..4e940ea
 --- /dev/null
 +++ b/refract/src/host/sdl_gles.cpp
-@@ -0,0 +1,2400 @@
+@@ -0,0 +1,2501 @@
 +// SDL2 + OpenGL ES 3.0 host backend, for Linux and Android (and anywhere else SDL2 and
 +// OpenGL ES 3 are available). It follows the Direct3D 11 backend: the GE emits geometry
 +// batches already transformed to clip space, which are drawn into one render target per
@@ -2665,12 +2671,13 @@ index 0000000..4940dee
 +layout(location = 1) in vec4 a_color;
 +layout(location = 2) in vec3 a_texcoord;
 +uniform vec4 u_texture_transform;
-+uniform vec2 u_target_scale;
++// x, y: the draw's clip space to the target's; z: x's offset (in w), for widescreen's shift
++uniform vec3 u_target_scale;
 +out vec4 v_color;
 +out vec3 v_texcoord;
 +void main() {
 +  vec4 position = a_position;
-+  position.x = a_position.x * u_target_scale.x + a_position.w * (u_target_scale.x - 1.0);
++  position.x = a_position.x * u_target_scale.x + a_position.w * u_target_scale.z;
 +  position.y = a_position.y * u_target_scale.y + a_position.w * (1.0 - u_target_scale.y);
 +  // Render targets are stored top row first, and the GE's depth range is [0, w].
 +  position.y = -position.y;
@@ -2855,6 +2862,9 @@ index 0000000..4940dee
 +std::atomic_uint32_t keyboard_buttons{};
 +// GL pixels per PSP pixel for render targets (REFRACT_RENDER_SCALE, or set_display_settings).
 +std::atomic_uint32_t render_scale{1U};
++// Widescreen (set_widescreen): the game's full-size framebuffers are drawn wider, to fill a window
++// wider than 480:272.
++std::atomic_bool widescreen{};
 +std::atomic_uint32_t keyboard_latched_buttons{};
 +std::atomic_uint32_t keyboard_analog_directions{};
 +std::atomic_uint32_t controller_buttons{};
@@ -3100,6 +3110,9 @@ index 0000000..4940dee
 +  std::uint32_t height{};
 +  std::uint64_t generation{};
 +  std::uint32_t scale{1U};
++  // Widescreen: PSP pixels added at each side of a full-size framebuffer; the game's x is at
++  // x + extra.
++  std::uint32_t extra{};
 +};
 +
 +struct RenderTarget {
@@ -3176,6 +3189,7 @@ index 0000000..4940dee
 +  }
 +
 +  void draw(int window_width, int window_height) {
++    update_extra(window_width, window_height);
 +    draw_new_geometry();
 +    present(window_width, window_height, std::chrono::steady_clock::now());
 +  }
@@ -3183,6 +3197,7 @@ index 0000000..4940dee
 +  // Shows the game's picture: its latest frame, or with smooth motion, the frame between the
 +  // last two that is due at `now` (the picture runs one game frame behind to have both).
 +  void present(int window_width, int window_height, std::chrono::steady_clock::time_point now) {
++    update_extra(window_width, window_height);
 +    float alpha = 1.0F;
 +    if (smooth_motion.load(std::memory_order_relaxed) && interpolating_ &&
 +        !framebuffer_sources.cpu_is_latest(current_frame_.address))
@@ -3234,6 +3249,15 @@ index 0000000..4940dee
 +  }
 +
 +private:
++  // Widescreen: how many PSP pixels the game's full-size framebuffers get at each side to fill a
++  // window of this shape (0 when it's off, or the window isn't wider than 480:272).
++  void update_extra(int window_width, int window_height) {
++    extra_ = 0U;
++    if (!widescreen.load(std::memory_order_relaxed) || window_width <= 0 || window_height <= 0) return;
++    const auto wide = 272.0F * static_cast<float>(window_width) / static_cast<float>(window_height);
++    extra_ = static_cast<std::uint32_t>(std::lround(std::clamp((wide - 480.0F) * 0.5F, 0.0F, 240.0F)));
++  }
++
 +  TextureResource create_texture(std::uint32_t width, std::uint32_t height,
 +                                 const std::uint8_t* pixels, std::uint64_t generation = 0U) {
 +    TextureResource result;
@@ -3254,9 +3278,14 @@ index 0000000..4940dee
 +
 +  RenderTarget& ensure_render_target(std::uint32_t address, const GeometryBatch& batch) {
 +    auto& target = render_targets_[address];
-+    const auto width = std::max<std::uint32_t>(target.color.width, batch.state.render_target_width);
++    // Widescreen widens the game's full-size framebuffers (those it shows), not its smaller
++    // render targets (textures it draws).
++    const auto extra = batch.state.render_target_width >= 480U ? extra_ : 0U;
++    const auto width = std::max<std::uint32_t>(target.color.extra == extra ? target.color.width : 0U,
++                                               batch.state.render_target_width + 2U * extra);
 +    const auto height = std::max<std::uint32_t>(target.color.height, batch.state.render_target_height);
-+    if (target.framebuffer == 0U || target.color.width < width || target.color.height < height) {
++    if (target.framebuffer == 0U || target.color.width < width || target.color.height < height ||
++        target.color.extra != extra) {
 +      // Drawn at the chosen resolution, as far as the GPU's texture size allows.
 +      GLint maximum_size{};
 +      glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maximum_size);
@@ -3264,6 +3293,7 @@ index 0000000..4940dee
 +      while (scale > 1U && std::max(width, height) * scale > static_cast<std::uint32_t>(maximum_size))
 +        --scale;
 +      create_render_target(target, width, height, scale);
++      target.color.extra = extra;
 +    }
 +    target.stride = batch.state.render_target_stride;
 +    target.format = batch.state.render_target_format;
@@ -3424,18 +3454,10 @@ index 0000000..4940dee
 +      const auto scale = target.color.scale;
 +      glViewport(0, 0, static_cast<GLsizei>(target.color.width * scale),
 +                 static_cast<GLsizei>(target.color.height * scale));
-+      const auto left = std::min(batch.state.scissor_left, target.color.width);
-+      const auto top = std::min(batch.state.scissor_top, target.color.height);
-+      const auto right = std::min(batch.state.scissor_right, target.color.width);
-+      const auto bottom = std::min(batch.state.scissor_bottom, target.color.height);
-+      if (right <= left || bottom <= top) continue;
-+      glEnable(GL_SCISSOR_TEST);  // ensure_render_target may have turned it off
-+      glScissor(static_cast<GLint>(left * scale), static_cast<GLint>(top * scale),
-+                static_cast<GLsizei>((right - left) * scale), static_cast<GLsizei>((bottom - top) * scale));
-+      apply_state(batch.state);
 +
++      // A render target drawn earlier, as this draw's texture.
 +      TextureResource* sampled{};
-+      float texture_transform[4]{1.0F, 1.0F, 0.0F, 0.0F};
++      std::optional<RenderTargetAddressOffset> sampled_offset;
 +      const auto texture_address = normalized_vram_address(batch.state.texture_address);
 +      std::uint32_t closest_offset = std::numeric_limits<std::uint32_t>::max();
 +      for (auto& [candidate_address, candidate] : render_targets_) {
@@ -3448,18 +3470,95 @@ index 0000000..4940dee
 +        if (!offset || byte_offset >= closest_offset || candidate.color.texture == 0U) continue;
 +        closest_offset = byte_offset;
 +        sampled = &candidate.color;
-+        texture_transform[0] = render_target_texture_scale(batch.texture_width, candidate.color.width);
-+        texture_transform[1] = render_target_texture_scale(batch.texture_height, candidate.color.height);
-+        texture_transform[2] = static_cast<float>(offset->x) / candidate.color.width;
-+        texture_transform[3] = static_cast<float>(offset->y) / candidate.color.height;
++        sampled_offset = offset;
++      }
++
++      // Widescreen. A widened framebuffer has extra pixels at each side: a draw into it is shifted
++      // by them, the game's 480 pixels in the middle and its 3D world carrying on at the sides; one
++      // that covers the game's whole width flat (a clear, a fade, a copy of the screen, a menu's
++      // background) is stretched across all of it, so nothing leaves bars at the sides. A widened
++      // screen sampled whole is sampled across all its width (squeezed into a texture that isn't
++      // widened; drawn back whole, that is stretched again).
++      bool whole_texture = false;  // the draw samples all of the game's width of a widened screen
++      if (sampled != nullptr && sampled_offset && sampled->extra > 0U) {
++        float low = std::numeric_limits<float>::max(), high = std::numeric_limits<float>::lowest();
++        for (const auto& vertex : batch.vertices) {
++          if (vertex.texture[2] == 0.0F) continue;
++          const auto u = vertex.texture[0] / vertex.texture[2] * static_cast<float>(batch.texture_width) +
++                         static_cast<float>(sampled_offset->x);
++          low = std::min(low, u);
++          high = std::max(high, u);
++        }
++        whole_texture = low <= 1.0F && high >= 479.0F;
++      }
++      bool flat_and_whole = false;  // the draw covers the game's whole width, flat
++      {
++        const auto half_width = static_cast<float>(batch.state.render_target_width) * 0.5F;
++        float low = std::numeric_limits<float>::max(), high = std::numeric_limits<float>::lowest();
++        bool flat = true;
++        for (const auto& vertex : batch.vertices) {
++          if (std::fabs(vertex.position[3] - 1.0F) > 1e-5F) {
++            flat = false;
++            break;
++          }
++          const auto x = (vertex.position[0] + 1.0F) * half_width;
++          low = std::min(low, x);
++          high = std::max(high, x);
++        }
++        flat_and_whole = flat && low <= 1.0F && high >= 479.0F;
++      }
++      const auto extra = static_cast<float>(target.color.extra);
++      const bool stretched = extra > 0.0F && flat_and_whole;
++
++      float texture_transform[4]{1.0F, 1.0F, 0.0F, 0.0F};
++      if (sampled != nullptr && sampled_offset) {
++        // The game's pixel u of the texture is at u * spread + shift in the target.
++        const auto sampled_extra = static_cast<float>(sampled->extra);
++        const auto spread = whole_texture ? (480.0F + 2.0F * sampled_extra) / 480.0F : 1.0F;
++        const auto shift = whole_texture ? 0.0F : sampled_extra;
++        texture_transform[0] = render_target_texture_scale(batch.texture_width, sampled->width) * spread;
++        texture_transform[1] = render_target_texture_scale(batch.texture_height, sampled->height);
++        texture_transform[2] = (static_cast<float>(sampled_offset->x) * spread + shift) / sampled->width;
++        texture_transform[3] = static_cast<float>(sampled_offset->y) / sampled->height;
 +      }
 +      if (sampled == nullptr) sampled = uploaded_texture(batch);
++
++      auto left = batch.state.scissor_left, right = batch.state.scissor_right;
++      if (target.color.extra > 0U) {
++        if (stretched || (left == 0U && right >= 480U)) {
++          right = std::max(right, 480U) + 2U * target.color.extra;
++        } else {
++          left += target.color.extra;
++          right += target.color.extra;
++        }
++      }
++      left = std::min(left, target.color.width);
++      right = std::min(right, target.color.width);
++      const auto top = std::min(batch.state.scissor_top, target.color.height);
++      const auto bottom = std::min(batch.state.scissor_bottom, target.color.height);
++      if (right <= left || bottom <= top) continue;
++      glEnable(GL_SCISSOR_TEST);  // ensure_render_target may have turned it off
++      glScissor(static_cast<GLint>(left * scale), static_cast<GLint>(top * scale),
++                static_cast<GLsizei>((right - left) * scale), static_cast<GLsizei>((bottom - top) * scale));
++      apply_state(batch.state);
++
 +      glUniform4fv(texture_transform_location_, 1, texture_transform);
-+      glUniform2f(target_scale_location_,
-+                  render_target_geometry_scale(batch.state.through_coordinates,
-+                                               batch.state.render_target_width, target.color.width),
-+                  render_target_geometry_scale(batch.state.through_coordinates,
-+                                               batch.state.render_target_height, target.color.height));
++      // The draw's x from -1 to 1 spans its render_target_width (D) pixels; in the target (T
++      // pixels wide) its pixel p goes to p * spread + shift.
++      const auto scale_y = render_target_geometry_scale(batch.state.through_coordinates,
++                                                        batch.state.render_target_height, target.color.height);
++      if (extra > 0.0F) {
++        const auto drawn = static_cast<float>(batch.state.render_target_width);
++        const auto width = static_cast<float>(target.color.width);
++        const auto spread = stretched ? (480.0F + 2.0F * extra) / 480.0F : 1.0F;
++        const auto shift = stretched ? 0.0F : extra;
++        glUniform3f(target_scale_location_, drawn * spread / width, scale_y,
++                    (drawn * spread + 2.0F * shift) / width - 1.0F);
++      } else {
++        const auto scale_x = render_target_geometry_scale(batch.state.through_coordinates,
++                                                          batch.state.render_target_width, target.color.width);
++        glUniform3f(target_scale_location_, scale_x, scale_y, scale_x - 1.0F);
++      }
 +      glUniform4ui(color_test_location_, batch.state.color_test ? 1U : 0U, batch.state.color_function,
 +                   batch.state.color_reference, batch.state.color_mask);
 +      glUniform4ui(alpha_test_location_, batch.state.alpha_test ? 1U : 0U, batch.state.alpha_function,
@@ -3530,15 +3629,17 @@ index 0000000..4940dee
 +    glViewport(0, 0, window_width, window_height);
 +    glClearColor(0.02F, 0.02F, 0.025F, 1.0F);
 +    glClear(GL_COLOR_BUFFER_BIT);
-+    set_display_viewport(window_width, window_height);
 +    // The framebuffer of the last flip drawn: a flip after the drawing was taken shows a buffer
 +    // whose new frame isn't drawn yet.
 +    if (texture == nullptr)
 +      texture = display_texture(shown_address_.value_or(
 +          normalized_vram_address(display_framebuffer_address.load(std::memory_order_relaxed))));
 +    if (texture == nullptr) return;
++    // All of a widened framebuffer's width (a video, drawn by the CPU, stays 480:272).
++    const auto shown_width = 480.0F + 2.0F * static_cast<float>(texture->extra);
++    set_display_viewport(window_width, window_height, shown_width / 272.0F);
 +    glUseProgram(display_program_);
-+    glUniform4f(display_transform_location_, std::min(1.0F, 480.0F / static_cast<float>(texture->width)),
++    glUniform4f(display_transform_location_, std::min(1.0F, shown_width / static_cast<float>(texture->width)),
 +                std::min(1.0F, 272.0F / static_cast<float>(texture->height)), 0.0F, 0.0F);
 +    glActiveTexture(GL_TEXTURE0);
 +    glBindTexture(GL_TEXTURE_2D, texture->texture);
@@ -3869,8 +3970,11 @@ index 0000000..4940dee
 +    if (found == render_targets_.end() || found->second.framebuffer == 0U) return nullptr;
 +    const auto& shown = found->second.color;
 +    if (smooth_target_.framebuffer == 0U || smooth_target_.color.width != shown.width ||
-+        smooth_target_.color.height != shown.height || smooth_target_.color.scale != shown.scale)
++        smooth_target_.color.height != shown.height || smooth_target_.color.scale != shown.scale ||
++        smooth_target_.color.extra != shown.extra) {
 +      create_render_target(smooth_target_, shown.width, shown.height, shown.scale);
++      smooth_target_.color.extra = shown.extra;
++    }
 +    smooth_target_.stride = found->second.stride;
 +    smooth_target_.format = found->second.format;
 +    const auto width = static_cast<GLint>(shown.width * shown.scale);
@@ -3884,9 +3988,8 @@ index 0000000..4940dee
 +    return &smooth_target_;
 +  }
 +
-+  // The largest 480:272 rectangle centred in the window.
-+  static void set_display_viewport(int window_width, int window_height) {
-+    constexpr float aspect = 480.0F / 272.0F;
++  // The largest rectangle of this shape (the PSP's 480:272 unless widened) centred in the window.
++  static void set_display_viewport(int window_width, int window_height, float aspect = 480.0F / 272.0F) {
 +    auto width = static_cast<float>(window_width);
 +    auto height = width / aspect;
 +    if (height > static_cast<float>(window_height)) {
@@ -3898,6 +4001,7 @@ index 0000000..4940dee
 +               static_cast<GLsizei>(height));
 +  }
 +
++  std::uint32_t extra_{};  // widescreen: PSP pixels at each side of the full-size framebuffers
 +  GLuint geometry_program_{};
 +  GLuint display_program_{};
 +  GLuint overlay_program_{};
@@ -4717,6 +4821,8 @@ index 0000000..4940dee
 +
 +void set_fps_counter(bool shown) { host::fps_counter_shown.store(shown); }
 +
++void set_widescreen(bool enabled) { host::widescreen.store(enabled); }
++
 +void set_frame_interpolation(std::uint32_t pictures_per_second) {
 +  if (pictures_per_second != 0U) host::interpolation_rate.store(pictures_per_second);
 +  host::smooth_motion.store(pictures_per_second != 0U);
@@ -4731,7 +4837,8 @@ index 0000000..4940dee
 +  if (host::window == nullptr) return;
 +  SDL_SetWindowFullscreen(host::window,
 +                          fullscreen ? static_cast<Uint32>(SDL_WINDOW_FULLSCREEN_DESKTOP) : 0U);
-+  if (fullscreen) return;
++  // REFRACT_WINDOW_SIZE (for testing) keeps the window at its size.
++  if (fullscreen || std::getenv("REFRACT_WINDOW_SIZE") != nullptr) return;
 +  // Shrink to the screen if needed, keeping the shape (offscreen runs have no real screen).
 +  SDL_Rect usable{};
 +  if (std::strcmp(SDL_GetCurrentVideoDriver(), "offscreen") != 0 &&
@@ -5386,7 +5493,7 @@ index 0000000..ae6b591
 +
 +}  // namespace refract::adhoc
 diff --git a/refract/src/runtime.cpp b/refract/src/runtime.cpp
-index 85f2ef7..ddb4e91 100644
+index 85f2ef7..22bd522 100644
 --- a/refract/src/runtime.cpp
 +++ b/refract/src/runtime.cpp
 @@ -13,7 +13,9 @@
@@ -5399,7 +5506,7 @@ index 85f2ef7..ddb4e91 100644
  
  #include <algorithm>
  #include <array>
-@@ -57,11 +59,26 @@ constexpr std::uint32_t initial_thread_stack_size = 0x40000U;
+@@ -57,11 +59,27 @@ constexpr std::uint32_t initial_thread_stack_size = 0x40000U;
  
  thread_local int current_thread_id = 1;
  thread_local bool guest_execution_locked = false;
@@ -5410,8 +5517,9 @@ index 85f2ef7..ddb4e91 100644
 +std::uint32_t guest_priority(const std::uint32_t* priority) {
 +  return priority == nullptr
 +             ? 0U
-+             : std::atomic_ref<const std::uint32_t>(*priority).load(
-+                   std::memory_order_relaxed);
++             // (atomic_ref<const T> is C++26: libc++ doesn't have it yet; this only loads.)
++             : std::atomic_ref<std::uint32_t>(*const_cast<std::uint32_t*>(priority))
++                   .load(std::memory_order_relaxed);
 +}
 +
 +std::uint32_t guest_priority() { return guest_priority(current_guest_priority); }
@@ -5426,7 +5534,7 @@ index 85f2ef7..ddb4e91 100644
  
  std::uint32_t align_up(std::uint32_t value, std::uint32_t alignment) {
    return (value + alignment - 1U) & ~(alignment - 1U);
-@@ -274,6 +291,22 @@ std::uint32_t decode_dxt_texel(const std::uint8_t* block,
+@@ -274,6 +292,22 @@ std::uint32_t decode_dxt_texel(const std::uint8_t* block,
    return color | (alpha << 24U);
  }
  
@@ -5449,7 +5557,7 @@ index 85f2ef7..ddb4e91 100644
  DecodedTexture decode_texture(
      psprecomp::State& state,
      const std::array<std::uint32_t, 256>& commands,
-@@ -337,6 +370,26 @@ DecodedTexture decode_texture(
+@@ -337,6 +371,26 @@ DecodedTexture decode_texture(
    const auto shift = (commands[0xc5U] >> 2U) & 0x1fU;
    const auto mask = (commands[0xc5U] >> 8U) & 0xffU;
    const auto start = ((commands[0xc5U] >> 16U) & 0x1fU) << 4U;
@@ -5476,7 +5584,7 @@ index 85f2ef7..ddb4e91 100644
    result.pixels = std::make_shared<std::vector<std::uint8_t>>(
        static_cast<std::size_t>(result.width) * result.height * 4U);
    for (std::uint32_t y = 0; y < result.height; ++y) {
-@@ -393,7 +446,16 @@ DecodedTexture decode_texture(
+@@ -393,7 +447,16 @@ DecodedTexture decode_texture(
            static_cast<std::uint8_t>(color >> 24U);
      }
    }
@@ -5494,7 +5602,7 @@ index 85f2ef7..ddb4e91 100644
    return result;
  }
  
-@@ -448,6 +510,25 @@ std::string fixed_string(const std::uint8_t* value, std::size_t size) {
+@@ -448,6 +511,25 @@ std::string fixed_string(const std::uint8_t* value, std::size_t size) {
                                      : static_cast<std::size_t>(end - value));
  }
  
@@ -5520,7 +5628,7 @@ index 85f2ef7..ddb4e91 100644
  std::u16string guest_utf16(psprecomp::State& state, std::uint32_t address,
                             std::size_t maximum = 4096U) {
    std::u16string result;
-@@ -645,6 +726,27 @@ struct Runtime::Implementation {
+@@ -645,6 +727,27 @@ struct Runtime::Implementation {
      std::jthread host_thread;
    };
  
@@ -5548,7 +5656,31 @@ index 85f2ef7..ddb4e91 100644
    struct SubInterrupt {
      std::mutex mutex;
      std::condition_variable changed;
-@@ -687,8 +789,20 @@ struct Runtime::Implementation {
+@@ -679,6 +782,23 @@ struct Runtime::Implementation {
+   std::filesystem::path current_directory;
+   std::filesystem::path disc_image;
+   std::unordered_map<std::string, std::uint32_t> disc_sectors;
++  // Where a raw read of the disc (disc0:/sce_lbn...) comes from: the file copied out of the disc
++  // (disc_sectors) that holds its first sector, with the view made relative to that file, so the
++  // disc image isn't needed (on Android the app can't open it by path); else the disc image.
++  std::filesystem::path raw_disc_source(io_state::FileView& view) const {
++    const auto sector = view.base / io_state::sector_size;
++    for (const auto& [path, start] : disc_sectors) {
++      if (start > sector) continue;
++      const auto offset = view.base - std::uint64_t{start} * io_state::sector_size;
++      const auto file = configuration.disc_root / path;
++      std::error_code error;
++      const auto size = std::filesystem::file_size(file, error);
++      if (error || offset >= size) continue;
++      view.base = offset;
++      return file;
++    }
++    return disc_image;
++  }
+   mutable std::mutex io_mutex;
+   std::mutex objects_mutex;
+   // Allegrex user threads share one CPU.  Generated guest code therefore
+@@ -687,8 +807,20 @@ struct Runtime::Implementation {
    // host cores.
    std::mutex guest_execution_mutex;
    std::condition_variable guest_execution_changed;
@@ -5571,7 +5703,7 @@ index 85f2ef7..ddb4e91 100644
    std::mutex exit_mutex;
    std::condition_variable exit_changed;
    std::unordered_map<int, std::shared_ptr<GuestThread>> threads;
-@@ -702,6 +816,7 @@ struct Runtime::Implementation {
+@@ -702,6 +834,7 @@ struct Runtime::Implementation {
    std::unordered_map<int, Callback> callbacks;
    std::unordered_map<int, GeCallback> ge_callbacks;
    std::unordered_map<int, std::shared_ptr<Alarm>> alarms;
@@ -5579,7 +5711,7 @@ index 85f2ef7..ddb4e91 100644
    std::unordered_map<std::uint64_t, std::shared_ptr<SubInterrupt>>
        sub_interrupts;
    ge::Scheduler ge_scheduler;
-@@ -873,20 +988,26 @@ void request_guest_exit(Implementation& implementation) {
+@@ -873,20 +1006,26 @@ void request_guest_exit(Implementation& implementation) {
      static_cast<void>(uid);
      alarm->changed.notify_all();
    }
@@ -5611,7 +5743,7 @@ index 85f2ef7..ddb4e91 100644
      guest_execution_locked = false;
      return false;
    }
-@@ -894,22 +1015,78 @@ bool acquire_guest_execution(Implementation& implementation) {
+@@ -894,22 +1033,78 @@ bool acquire_guest_execution(Implementation& implementation) {
    return true;
  }
  
@@ -5692,7 +5824,7 @@ index 85f2ef7..ddb4e91 100644
    }
  
    [[nodiscard]] bool locked() const { return locked_; }
-@@ -922,6 +1099,8 @@ private:
+@@ -922,6 +1117,8 @@ private:
    bool locked_{};
  };
  
@@ -5701,7 +5833,7 @@ index 85f2ef7..ddb4e91 100644
  struct GuestExecutionPause {
    explicit GuestExecutionPause(Implementation& implementation)
        : implementation_(implementation), paused_(guest_execution_locked) {
-@@ -943,29 +1122,34 @@ private:
+@@ -943,29 +1140,34 @@ private:
  };
  
  void execute_guest(Implementation& implementation, psprecomp::State& state) {
@@ -5750,7 +5882,7 @@ index 85f2ef7..ddb4e91 100644
  }
  
  static void prepare_state_for_thread(Implementation& implementation,
-@@ -978,15 +1162,11 @@ static void prepare_state_for_thread(Implementation& implementation,
+@@ -978,15 +1180,11 @@ static void prepare_state_for_thread(Implementation& implementation,
    state.volatile_memory_size = implementation.volatile_memory.size();
  }
  
@@ -5771,7 +5903,7 @@ index 85f2ef7..ddb4e91 100644
    if (entry == 0U || !implementation.configuration.guest_executor)
      return false;
    constexpr std::uint32_t callback_stack_size = 0x4000U;
-@@ -1001,9 +1181,8 @@ bool dispatch_guest_callback(Implementation& implementation,
+@@ -1001,9 +1199,8 @@ bool dispatch_guest_callback(Implementation& implementation,
    callback_state.pc = entry;
    const auto guest_gp = gp_override.value_or(callback_state.gpr[28]);
    std::fill_n(callback_state.gpr, 32U, 0U);
@@ -5783,7 +5915,7 @@ index 85f2ef7..ddb4e91 100644
    callback_state.gpr[28] = guest_gp;
    callback_state.gpr[29] = stack + callback_stack_size - 64U;
    callback_state.gpr[31] = return_address;
-@@ -1036,6 +1215,21 @@ bool dispatch_guest_callback(Implementation& implementation,
+@@ -1036,6 +1233,21 @@ bool dispatch_guest_callback(Implementation& implementation,
    return callback_state.stop_reason == psprecomp::StopReason::returned;
  }
  
@@ -5805,7 +5937,7 @@ index 85f2ef7..ddb4e91 100644
  bool dispatch_notify_callback(Implementation& implementation,
                               psprecomp::State& state, int uid,
                               std::uint32_t argument) {
-@@ -1174,6 +1368,7 @@ constexpr bool is_non_yielding_stub(std::string_view name) {
+@@ -1174,6 +1386,7 @@ constexpr bool is_non_yielding_stub(std::string_view name) {
      "sceAtracGetChannel",
      "sceAtracGetMaxSample",
      "sceAtracGetNextSample",
@@ -5813,7 +5945,7 @@ index 85f2ef7..ddb4e91 100644
      "sceAtracGetRemainFrame",
      "sceAtracGetSoundSample",
      "sceAtracGetStreamDataInfo",
-@@ -1281,10 +1476,15 @@ void Runtime::configure(std::uint8_t* memory, std::size_t size,
+@@ -1281,10 +1494,15 @@ void Runtime::configure(std::uint8_t* memory, std::size_t size,
            : static_cast<std::uint32_t>(size);
    constexpr std::uint32_t user_memory_start = 0x08800000U;
    const auto image_start = base + configuration.image_start;
@@ -6715,6 +6847,40 @@ index 6aa1a4e..82878fd 100644
                render_state.through_coordinates = through;
                const auto clear_mode =
                    (graphics.commands[0xd3U] & 1U) != 0;
+diff --git a/refract/src/stubs/io/sceIoOpen.cpp b/refract/src/stubs/io/sceIoOpen.cpp
+index 7b5f4af..eaae517 100644
+--- a/refract/src/stubs/io/sceIoOpen.cpp
++++ b/refract/src/stubs/io/sceIoOpen.cpp
+@@ -15,9 +15,9 @@ void sceIoOpen(Implementation& implementation, psprecomp::State& state) {
+         state.gpr[2] = io_error;
+         return;
+       }
+-      const auto resolved = raw_disc || whole_disc
+-                                ? implementation.disc_image
+-                                : implementation.resolve_path(path);
++      const auto resolved = raw_disc     ? implementation.raw_disc_source(*raw_disc_view)
++                            : whole_disc ? implementation.disc_image
++                                         : implementation.resolve_path(path);
+       if ((state.gpr[5] & 0x0200U) != 0) {
+         std::error_code ignored;
+         std::filesystem::create_directories(resolved.parent_path(), ignored);
+diff --git a/refract/src/stubs/io/sceIoOpenAsync.cpp b/refract/src/stubs/io/sceIoOpenAsync.cpp
+index cac59d9..d0d61ec 100644
+--- a/refract/src/stubs/io/sceIoOpenAsync.cpp
++++ b/refract/src/stubs/io/sceIoOpenAsync.cpp
+@@ -11,9 +11,9 @@ void sceIoOpenAsync(Implementation& implementation, psprecomp::State& state) {
+         state.gpr[2] = io_error;
+         return;
+       }
+-      const auto resolved = raw_disc || whole_disc
+-                                ? implementation.disc_image
+-                                : implementation.resolve_path(path);
++      const auto resolved = raw_disc     ? implementation.raw_disc_source(*raw_disc_view)
++                            : whole_disc ? implementation.disc_image
++                                         : implementation.resolve_path(path);
+       if ((state.gpr[5] & 0x0200U) != 0) {
+         std::error_code ignored;
+         std::filesystem::create_directories(resolved.parent_path(), ignored);
 diff --git a/refract/src/stubs/kernel/sceKernelChangeThreadPriority.cpp b/refract/src/stubs/kernel/sceKernelChangeThreadPriority.cpp
 index 347d51f..ceaac2a 100644
 --- a/refract/src/stubs/kernel/sceKernelChangeThreadPriority.cpp

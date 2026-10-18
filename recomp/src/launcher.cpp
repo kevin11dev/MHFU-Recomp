@@ -47,6 +47,8 @@
 #include <thread>
 #include <vector>
 
+#include <unistd.h>
+
 namespace fs = std::filesystem;
 
 namespace {
@@ -64,6 +66,10 @@ constexpr const char* window_title = "Monster Hunter Freedom Unite (recomp)";
 
 void show_error(const std::string& message) {
   std::fprintf(stderr, "mhfu: %s\n", message.c_str());
+#if defined(__ANDROID__)
+  // The app shows it again when the game has closed, and offers to choose another ISO.
+  std::ofstream(mhfu::data_directory() / "launch-problem.txt") << message << '\n';
+#endif
 #if defined(MHFU_HAS_SDL)
   SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, window_title, message.c_str(), nullptr);
 #endif
@@ -84,6 +90,11 @@ struct Settings {
   int fps = 30;           // 30 (the game's own) or 60 (the community 60 fps code)
   int resolution = 720;   // 720 or 1080: the window size and how sharply the game is drawn
   bool fullscreen = false;
+#if defined(__ANDROID__)
+  bool widescreen = true;  // fill a screen wider than the PSP's with more of the game's world
+#else
+  bool widescreen = false;
+#endif
   bool fps_counter = false;  // show the frame rate in a corner
   int frame_interpolation = 0;  // frames shown a second, with ones in between the game's; 0 off
   int right_stick_camera = 100;  // the right stick turns the camera: % of the d-pad's speed, 0 off
@@ -212,6 +223,7 @@ Settings load_settings(const fs::path& data) {
     else if (key == "resolution") settings.resolution = value == "1080" ? 1080 : 720;
     else if (key == "fullscreen") settings.fullscreen = value == "1";
     else if (key == "fps_counter") settings.fps_counter = value == "1";
+    else if (key == "widescreen") settings.widescreen = value == "1";
     else if (key == "frame_interpolation") {
       const auto rate = std::atoi(value.c_str());
       if (std::find(interpolation_rates.begin(), interpolation_rates.end(), rate) != interpolation_rates.end())
@@ -242,6 +254,7 @@ void save_settings(const fs::path& data, const Settings& settings) {
   if (settings.iso) config << "iso=" << settings.iso->string() << '\n';
   config << "fps=" << settings.fps << "\nresolution=" << settings.resolution
          << "\nfullscreen=" << (settings.fullscreen ? 1 : 0)
+         << "\nwidescreen=" << (settings.widescreen ? 1 : 0)
          << "\nfps_counter=" << (settings.fps_counter ? 1 : 0)
          << "\nframe_interpolation=" << settings.frame_interpolation
          << "\nright_stick_camera=" << settings.right_stick_camera << '\n';
@@ -269,8 +282,8 @@ std::optional<Disc> open_disc(const fs::path& path, std::string& problem) {
   }
   Disc disc;
   disc.iso = path;
-  std::ifstream iso(path, std::ios::binary);
-  if (!mhfu::disc::list_files(iso, disc.files)) {
+  const auto iso = mhfu::disc::open_iso(path);
+  if (!mhfu::disc::list_files(*iso, disc.files)) {
     problem = "Can't read the files on " + path.filename().string() + ".";
     return std::nullopt;
   }
@@ -293,7 +306,8 @@ bool prepare_disc(const Disc& disc, const fs::path& data) {
   const auto disc_root = data / "disc";
   const auto original = data / "original";
   fs::create_directories(original);
-  std::ifstream iso(disc.iso, std::ios::binary);
+  const auto stream = mhfu::disc::open_iso(disc.iso);
+  auto& iso = *stream;
   std::ofstream sectors(original / "disc-sectors.tsv", std::ios::trunc);
   std::vector<char> buffer(1U << 20U);
   for (const auto& file : disc.files) {
@@ -450,8 +464,24 @@ int main(int argc, char** argv) {
     else if (std::strcmp(argv[i], "--play") == 0) play = true;
     else iso_argument = fs::path(argv[i]);
   }
+#if defined(__ANDROID__)
+  // What the game and the launcher print goes to log.txt, which the app shows if the game stops
+  // unexpectedly.
+  if (std::freopen((mhfu::data_directory() / "log.txt").c_str(), "w", stderr) != nullptr) {
+    std::setvbuf(stderr, nullptr, _IONBF, 0);
+    dup2(fileno(stderr), fileno(stdout));
+  }
+  // The app hands the ISO over as an open file (GameActivity); without one, the app has said why.
+  if (!iso_argument) return 1;
+  // Landscape whichever way the phone is turned, even with rotation locked (the window can be
+  // resized, so without this SDL would follow the lock).
+  SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
   const auto data = mhfu::data_directory();
   auto settings = load_settings(data);
+#if defined(__ANDROID__)
+  settings.fullscreen = true;  // the whole screen, without Android's bars
+#endif
   if (settings.player_address.empty()) {
     settings.player_address = new_address();
     if (const char* user = std::getenv("USER"); settings.nickname.empty() && user != nullptr) settings.nickname = user;
@@ -478,7 +508,12 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  const auto resources = executable_directory(argv[0]).parent_path() / "Resources";
+  // Fonts and the logo: in Resources next to the program's folder, or where MHFU_RESOURCES says (the
+  // Android app unpacks them there).
+  const auto* resources_setting = std::getenv("MHFU_RESOURCES");
+  const auto resources = resources_setting != nullptr && *resources_setting != '\0'
+                             ? fs::path(resources_setting)
+                             : executable_directory(argv[0]).parent_path() / "Resources";
   setenv("REFRACT_DISC_ROOT", (data / "disc").c_str(), 1);
   setenv("REFRACT_DISC_IMAGE", (data / "original" / "disc.iso").c_str(), 1);
   setenv("REFRACT_WRITABLE_ROOT", (data / "ms0").c_str(), 0);
@@ -526,8 +561,14 @@ int main(int argc, char** argv) {
          "otherwise go at double speed. If something moves too fast, go back to 30."},
         {"Resolution", {"720p", "1080p"}, settings.resolution == 1080 ? 1U : 0U, "Display",
          "The game is drawn at this resolution (3 or 4 times the PSP's), so it's sharper, not just bigger."},
+#if !defined(__ANDROID__)
         {"Display", {"Window", "Fullscreen"}, settings.fullscreen ? 1U : 0U, "Display",
          "In a window, or on the whole screen."},
+#endif
+        {"Widescreen", {"Off", "On"}, settings.widescreen ? 1U : 0U, "Display",
+         "On a screen wider than the PSP's (most phones, ultrawide monitors), the game's world is drawn wider to "
+         "fill it, at the same size, instead of black bars at the sides. The HUD and menus stay in the middle. "
+         "Off shows the original picture."},
         {"Frame interpolation", {"Off", "60 fps", "120 fps", "144 fps"},
          static_cast<std::size_t>(std::find(interpolation_rates.begin(), interpolation_rates.end(),
                                             settings.frame_interpolation) -
@@ -546,8 +587,13 @@ int main(int argc, char** argv) {
          "A free camera in the hunting areas, like Monster Hunter 4 Ultimate's: the right stick turns and tilts "
          "it, faster the further you push it. Off keeps the game's original camera."},
     };
-    constexpr std::size_t frame_rate = 0, resolution = 1, display = 2, interpolation = 3, fps_counter = 4,
+#if defined(__ANDROID__)
+    constexpr std::size_t frame_rate = 0, resolution = 1, widescreen = 2, interpolation = 3, fps_counter = 4,
                           camera = 5;
+#else
+    constexpr std::size_t frame_rate = 0, resolution = 1, display = 2, widescreen = 3, interpolation = 4,
+                          fps_counter = 5, camera = 6;
+#endif
     const auto choosable = features_by_name();
     const auto first_feature = choices.size();
     for (const auto* feature : choosable)
@@ -572,7 +618,10 @@ int main(int argc, char** argv) {
     if (!refract::frontend::run_launcher(launcher_screen(data, resources, *disc), choices)) return 0;
     settings.fps = choices[frame_rate].selected == 1U ? 60 : 30;
     settings.resolution = choices[resolution].selected == 1U ? 1080 : 720;
+#if !defined(__ANDROID__)
     settings.fullscreen = choices[display].selected == 1U;
+#endif
+    settings.widescreen = choices[widescreen].selected == 1U;
     settings.fps_counter = choices[fps_counter].selected == 1U;
     settings.frame_interpolation = interpolation_rates.at(choices[interpolation].selected);
     settings.right_stick_camera = right_stick_speeds.at(choices[camera].selected);
@@ -582,6 +631,7 @@ int main(int argc, char** argv) {
     save_settings(data, settings);
   }
   apply_display();
+  refract::frontend::set_widescreen(settings.widescreen);
   refract::frontend::set_fps_counter(settings.fps_counter);
   refract::frontend::set_frame_interpolation(static_cast<std::uint32_t>(settings.frame_interpolation));
 #endif

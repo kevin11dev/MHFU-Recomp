@@ -6,3 +6,7 @@ __pycache__/
 /overlays/
 /savestates/
 /testdata/
+# The Android build's own (android/)
+.gradle/
+.cxx/
+local.properties

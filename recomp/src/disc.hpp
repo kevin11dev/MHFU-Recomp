@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <istream>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -33,10 +35,14 @@ struct File {
   std::uint32_t size{};
 };
 
+// A disc image's contents. "/proc/self/fd/N" is read through the open file N: on Android the
+// system's file picker gives the app an open file, not a path it may open again.
+std::unique_ptr<std::istream> open_iso(const std::filesystem::path& path);
+
 std::uint32_t le32(const std::uint8_t* bytes);
-bool read_sectors(std::ifstream& iso, std::uint32_t sector, std::size_t size, std::vector<std::uint8_t>& out);
+bool read_sectors(std::istream& iso, std::uint32_t sector, std::size_t size, std::vector<std::uint8_t>& out);
 // Every file on the disc.
-bool list_files(std::ifstream& iso, std::vector<File>& files);
+bool list_files(std::istream& iso, std::vector<File>& files);
 std::optional<std::string> sfo_string(const std::vector<std::uint8_t>& sfo, const std::string& wanted);
 std::uint64_t fnv1a64(const std::uint8_t* bytes, std::size_t size);
 
