@@ -1,0 +1,112 @@
+# module	address	name	signature	notes
+# --- The game program (EBOOT) ---
+eboot	0x08859188	vblank_handler		every vertical blank (60 a second); lets the main loop run a frame every 2 (every 1 with the 60 fps code)
+eboot	0x0888FD38	main_loop		one frame: updates every subsystem, then end_of_frame, then Game.frame_count += 1
+eboot	0x08897E1C	user_main		the user_main thread: sets its own priority to 48 (the DATA.BIN loader's), then main_loop for good
+eboot	0x0888FDFC	main_init	void main_init(Game* game)	before the first frame: keeps this thread in Game.main_thread, starts the priority changer and the CheckExitGame thread (priority 111)
+eboot	0x08890430	priority_changer_start	void priority_changer_start(Game* game)	starts the priorityChanger thread (priority 40)
+eboot	0x08890494	priority_changer_thread		sleeps; woken while GameData.game_flags has 0x200, it raises the main thread to 38 (and Game.second_thread to 39), above the loader
+eboot	0x08890544	priority_changer_lower	void priority_changer_lower(Game* game)	the main thread back to 48 (Game.second_thread to 49), then wakes the priority changer
+eboot	0x088905B0	priority_changer_create_timer	void priority_changer_create_timer(Game* game)	creates the "ChangeThreadVTimer"
+eboot	0x088905EC	priority_changer_arm		starts the VTimer; vblank_handler calls it when it lets the main loop run a frame
+eboot	0x0889064C	priority_changer_timer		the VTimer's handler: priority_changer_lower, once more 16.7 ms later, then stops
+eboot	0x08891B14	end_of_frame	void end_of_frame(void* renderer)	the last call of the main loop each frame
+eboot	0x08890BBC	renderer_begin_frame	void renderer_begin_frame(void* renderer)	resets the frame's draw lists; +0x15e counts frames
+eboot	0x088D5C34	hunter_request_motion	void hunter_request_motion(Hunter* hunter, s16 motion, s32 blend, s16 flags)	asks for a motion (and motion + 100 for the upper body), blending over blend / 2 frames; hunter_motion_update starts it
+eboot	0x088D5C7C	hunter_motion_update	void hunter_motion_update(Hunter* hunter)	sets the motion speed (2.0, at 0x088D5DF8: the 60 fps code makes it 1.0) and starts the motions asked for
+eboot	0x08863E70	motion_start	void motion_start(Motion* motion, void* data, s32 frame, s32 blend, s32 layer)	starts a motion on a layer at a frame, blending in over blend + 1 frames (blend_rate 1 / (blend + 1) a frame; under 0: the other way)
+eboot	0x08865CB8	character_in_action	s32 character_in_action(Character* character, s8 group, s8 id)	whether its current action is (group, id)
+eboot	0x088D61CC	hunter_read_pad	void hunter_read_pad(Hunter* hunter)	copies the pad into Hunter.pad_held, pad_pressed and pad_released each frame; nothing while a message waits
+eboot	0x08869570	quest_gather_points	GatherPoint* quest_gather_points(Quest* quest, s16 area)	the area's gather points, ending with a position x of -1.0 (null if none)
+eboot	0x08865934	character_update	void character_update(Character* character)	unless paused: action_time += 2, held_time += 2, countdown -= 1, then the class's update (method 0x3c)
+eboot	0x08868F0C	pad_init	void pad_init(Pad* pad)
+eboot	0x08868F50	pad_read	void pad_read(Pad* pad)	reads the pad (buttons, and the stick as a direction in the high 16 bits) into pad_held, pad_pressed, pad_released and pad_repeat: held buttons repeat after 13 frames, then every 3
+eboot	0x08850FB8	play_time_update	void play_time_update(GameData* game)	frame_count += 1; play_time += 1 every 30 frames
+eboot	0x0883095C	message_type_out	s32 message_type_out(MessageWindow* window, char* text, u32 frames, s32 mode, s32 choice)	shows a message up to where it has typed out: 3 frames a letter, 15 after . ? and 8 after a comma; frames is the time since it started (-1: all of it)
+eboot	0x08830D3C	message_draw	void message_draw(MessageWindow* window)	draws the typed-out letters
+eboot	0x08830728	message_show_system	void message_show_system(MessageWindow* window, s32 a, s32 message, s32 b)	a system message such as an item's effect wearing off
+eboot	0x08883988	sound_play		plays a sound effect
+eboot	0x0889EC14	sound_frame	s32 sound_frame(void)	runs the sound command queue; counts frames at 0x09A0B56C
+eboot	0x088A356C	sas_render_thread		the CsePspSasRendThread (priority 17): updates the 32 voices, mixes a block with sas_core, adds effects, and outputs it (blocking)
+eboot	0x088A43C0	sound_voices_update	void sound_voices_update(void)	sound_voice_update on each of the 32 voices (0x2c bytes each from 0x09A0E3CC)
+eboot	0x088A4408	sound_voice_update		applies the changes flagged in a voice's +0xc, one bit at a time from bit 0 (4 pitch, 0x400 volume, 0x800 envelope, 0x4000 key on, 0x8000 key off); loops forever if a bit it has passed is set meanwhile
+eboot	0x088972A0	sas_core	s32 sas_core(void* buffer)	__sceSasCore on the sound engine's SAS core; 0x80420005 for a buffer not 64-byte aligned
+eboot	0x08897AE0	audio_output	s32 audio_output(u32 channel, u32 left, u32 right, void* buffer)	sceAudioOutputPannedBlocking on one of 4 reserved channels
+eboot	0x088CB004	stage_update	void stage_update(Stage* stage)	an area's effects: effect_count += 1, effect_turn += 0x2e, effect_timer, then the stage's own update (method 0x20)
+eboot	0x088CA2E0	stage_init	void stage_init(Stage* stage)
+eboot	0x08886E50	field_camera_update	void field_camera_update(FieldCamera* camera)	the hunting areas' camera; the d-pad turns it (the recomp's right-stick camera replaces it)
+eboot	0x0888D004	field_camera_read_pad	void field_camera_read_pad(FieldCamera* camera)	copies CameraManager.held_buttons and pressed_buttons into buttons_used and pressed_used while it takes the pad (field_camera_takes_pad, and camera 5 not running); otherwise L alone, or nothing
+eboot	0x0888D600	field_camera_takes_pad	u8 field_camera_takes_pad(FieldCamera* camera)	whether the d-pad turns the camera: not while a message or the menu is up, nor in some of the hunter's actions
+eboot	0x0888E494	field_camera_should_recenter	u8 field_camera_should_recenter(FieldCamera* camera)	whether the camera turns back behind the hunter this frame: L tapped (hunter_tapped_l), and in some actions
+eboot	0x08888B84	village_camera_update		the village's and the house's camera
+eboot	0x088883C0	aim_camera_update		the camera over the shoulder when aiming
+eboot	0x0888A1FC	event_camera_update	void event_camera_update(EventCamera* camera)	starts a cutscene camera asked for (CameraManager.event_request), runs it as a script or a track
+eboot	0x0888AFEC	event_camera_script_update	s32 event_camera_script_update(EventCamera* camera)
+eboot	0x0888B1C0	event_camera_run_script	s32 event_camera_run_script(EventCamera* camera)	runs commands up to the next frame: 0x26 starts a step of N frames, 0x27 places the camera and counts the step down
+eboot	0x0888EAF8	event_camera_place	void event_camera_place(EventCamera* camera, void* command)	places the camera between two keys by step_left / step_length
+eboot	0x0888E28C	event_camera_angles	void event_camera_angles(EventCamera* camera, s16* angles)
+eboot	0x0888C9F8	event_camera_track_update	s32 event_camera_track_update(EventCamera* camera)	loads a track of keys, then each frame places the camera on it and step_left += 1
+eboot	0x0888CC10	event_camera_place_on_track	u8 event_camera_place_on_track(EventCamera* camera)	between the keys around step_left * 2; true at the end
+eboot	0x0888E324	event_camera_start_fade	void event_camera_start_fade(EventCamera* camera, s32 frames)
+eboot	0x0886A35C	quest_time	s32 quest_time(Quest* quest, s32 which)	1: the time limit, 0: the time left (frames)
+eboot	0x088B9910	hunt_task_frame	void hunt_task_frame(Task* task)	frames += 1, play_time_update, then resumes the task
+eboot	0x088971A0	task_resume	void task_resume(Task* task)	resumes the task's coroutine for a frame
+eboot	0x0890C370	coroutine_switch		saves this context, restores another (used by tasks)
+eboot	0x0890C3D8	coroutine_save
+eboot	0x088D6488	hunter_countdowns	void hunter_countdowns(Hunter* hunter)	timer_62c, timer_46a, timer_630, timer_5f0 -= 1
+eboot	0x088140C4	camera_get_eye	void camera_get_eye(CameraManager* manager, vec3* eye)
+eboot	0x088140E4	camera_get_target	void camera_get_target(CameraManager* manager, vec3* target)
+eboot	0x088DCEBC	player_get	Hunter* player_get(void* players, s32 index)
+eboot	0x0880C464	memset	void* memset(void* to, s32 value, u32 size)
+eboot	0x0880C0AC	memcpy_words		copies memory
+eboot	0x0880D9EC	debug_print		prints a debug line (format)
+eboot	0x0880E8F0	sprintf	s32 sprintf(char* to, char* format)
+# --- game_sub.ovl (loaded at 0x09C19000 in the village and on hunts) ---
+game_sub	0x09C3AAA8	collision_sweep_sphere		sweeps a sphere (radius in $f12) through the world (a0) from a1 to a2, writing where it stops to a3; flags in t0; non-zero on a hit
+game_sub	0x09C3DA00	collision_floor_height		the height of the floor under a point (a1) in the world (a0), in $f0
+game_sub	0x09CC4C88	texture_animation_init	void texture_animation_init(TextureAnimation* animation)
+game_sub	0x09CC4D08	texture_animation_update	void texture_animation_update(TextureAnimation* animation)	frame_u and frame_v += 1
+game_sub	0x09C9A3C8	marker_update	void marker_update(Marker* marker)	the marker bobbing over a character
+game_sub	0x09CBAAF0	hunt_flipbook_update	void hunt_flipbook_update(Flipbook* flipbook)	frame and frame2 += 1, wrapping
+# --- lobby_task.ovl (the village, loaded at 0x09A5F200) ---
+lobby_task	0x09A6EB98	lobby_task_update	void lobby_task_update(Task* task)	a frame of the village's state machine; some states wait by counting wait down
+lobby_task	0x09A6C180	lobby_task_common	void lobby_task_common(Task* task)	what the village does every frame, whatever its state
+lobby_task	0x09ABD270	villager_update	void villager_update(Villager* villager)	as character_update, and a count to 100 at +0x4ec
+lobby_task	0x09AD45B8	villager_motion_update	void villager_motion_update(Villager* villager)	frames in the current motion at +0x4fc
+lobby_task	0x09AF8250	lobby_flipbook_update	void lobby_flipbook_update(Flipbook* flipbook)	frame += 1, wrapping
+lobby_task	0x09A87268	elder_talk	void elder_talk(Task* talk)	the Village Elder's dialog
+lobby_task	0x09A9EE50	npc_talk_update		a frame of an NPC's dialog: time since the message started += 1, message_type_out
+# --- game_task.ovl (hunts, loaded at 0x09A5F200) ---
+game_task	0x09A5F280	hunt_task_main	void hunt_task_main(Task* task)	the hunt task's coroutine
+game_task	0x09A61180	hunt_task_states	void hunt_task_states(Task* task)	the hunt's state machine: fades, loading an area (sets GameData.area)...
+game_task	0x09A664F0	hunter_frame	void hunter_frame(Hunter* hunter)	a hunter's frame on hunts: character_update, hunter_update, then its actions
+game_task	0x09A6B030	hunter_update	void hunter_update(Hunter* hunter)	the hunter's update on hunts
+game_task	0x09A6ED48	hunter_tapped_l	u8 hunter_tapped_l(Hunter* hunter)	L let go after being held under 10 frames (Hunter.l_held_frames): the camera turns back behind the hunter; held longer, L only shows the item bar
+game_task	0x09A67468	hunter_run_action	void hunter_run_action(Hunter* hunter)	runs the current action, by Character.action_group (group 0: hunter_actions_0)
+game_task	0x09A9A8E0	hunter_actions_0	void hunter_actions_0(Hunter* hunter)	group 0 actions, by Character.action_id
+game_task	0x09A67778	hunter_set_action	void hunter_set_action(Hunter* hunter, s8 group, s8 id, s32 flags)	starts an action (through the hunter's method 0x6c)
+game_task	0x09AA5170	hunter_sheathed_input		what the buttons do with the weapon sheathed, standing, walking or running: Circle interacts (hunter_interact, hunter_try_gather), Square uses an item (hunter_try_gather with how 2 first)
+game_task	0x09AA63B0	hunter_interact	void hunter_interact(Hunter* hunter, s32 from)	acts on the area spot the hunter stands in (stage_spot_at): fishing, quest spots and others
+game_task	0x09AA6A18	stage_spot_at	s16 stage_spot_at(Hunter* hunter, vec3* position, s16* parameter, u8* kind)	the type of the area spot the hunter stands in (0x18 to 0x23; hunter_frame shows a prompt for 0x18, 0x1e and 0x21), 0 if none
+game_task	0x09AA6D70	hunter_try_gather	void hunter_try_gather(Hunter* hunter, s32 how)	at a gather point (gather_point_at): how 0 (Circle) gathers (action 0x47), how 2 (Square) mines (0x51) or catches bugs (0x52) with the right tool selected
+game_task	0x09A6F390	gather_point_at	s16 gather_point_at(Hunter* hunter, s16* kind, vec3* position)	the table of the gather point the hunter stands at, and its kind; -1 if none
+game_task	0x09AA0D08	hunter_gather_action	void hunter_gather_action(Hunter* hunter, s32 variant)	gathering actions (0 gather, 4 mine, 5 catch bugs, 2 quest items): the motion, gather_item when action_timer runs out, then back to standing
+game_task	0x09AAA720	gather_item	s32 gather_item(Hunter* hunter, s16 how)	rolls the item (gather_roll) and puts it in the pouch, with the messages; -1 if nothing
+game_task	0x09AAAA40	gather_roll	s16 gather_roll(Hunter* hunter)	the item from the gather point the hunter stands at, counting its gathers down: 0 none, -2 nothing left
+game_task	0x09A68EC8	hunter_update_timers	void hunter_update_timers(Hunter* hunter)	counts the hunter's timers down (items, ailments, hunger), recovers health every 60 frames, stamina
+game_task	0x09A69F50	hunter_update_hunger	void hunter_update_hunger(Hunter* hunter)	hunger -= 1 to 6 a frame (area, skills); at 0 the most stamina drops
+game_task	0x09A6A1D0	hunter_add_stamina	void hunter_add_stamina(Hunter* hunter, s16 amount)	the 60 fps code makes changes under 4 apply every other call
+game_task	0x09A6A270	hunter_use_stamina	void hunter_use_stamina(Hunter* hunter, s16 amount)	with skills, then hunter_add_stamina
+game_task	0x09A6A638	hunter_change_max_stamina	void hunter_change_max_stamina(Hunter* hunter, s32 amount)
+game_task	0x09A654F0	hunter_init	void hunter_init(Hunter* hunter)
+game_task	0x09AC4850	monster_frame	void monster_frame(Monster* monster)	by update_state: monster_appear, monster_update, monster_die...
+game_task	0x09AC5B30	monster_update	void monster_update(Monster* monster)	a live monster's frame: character_update (and its species' code), its timers, ailments, rage, motion, collision
+game_task	0x09AC68B0	monster_die	void monster_die(Monster* monster)
+game_task	0x09AC6A60	monster_init	void monster_init(Monster* monster)
+game_task	0x09B12058	monster_move_facing	void monster_move_facing(Monster* monster)	position += speed turned to the monster's facing (x and z; y as it is)
+game_task	0x09B5B0F0	monster_move_facing_2	void monster_move_facing_2(Monster* monster)	the same as monster_move_facing
+game_task	0x09B13FD0	monster_timed_moves	void monster_timed_moves(Monster* monster)	an action of steps timed by action_timer (190, 254, 182, 121... frames), some moving by speed
+game_task	0x09B22B30	monster_flying_action	void monster_flying_action(Monster* monster, s32 a, s32 b)	position += speed, speed += acceleration, until near the floor
+game_task	0x09B23240	monster_sliding_action	void monster_sliding_action(Monster* monster)	slides by speed while action_timer counts down, then waits
+game_task	0x09AD2DC0	monster_update_hate	void monster_update_hate(Monster* monster)	hate towards each player wears off
+game_task	0x09AD4BD0	monster_fall	u8 monster_fall(Monster* monster)	speed += acceleration, position += speed, then onto the floor; true when it lands

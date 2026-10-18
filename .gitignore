@@ -1,0 +1,8 @@
+build/
+__pycache__/
+# The game's, made on your computer from your own copy (docs/decompilation.md): never commit them
+/ULES01213_EBOOT.BIN
+/decompiled/
+/overlays/
+/savestates/
+/testdata/

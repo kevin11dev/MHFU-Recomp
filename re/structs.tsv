@@ -1,0 +1,275 @@
+# struct	offset	type	name	notes
+# Anything that moves or acts: hunters, monsters, villagers. Steps below are per 30 fps frame.
+Character	0x0	void*	vtable	methods; +0x3c is the per-class update called by character_update
+Character	0x4	u32	flags	bit 2: drawn/updated this frame
+Character	0x80	Motion	motion	its animation: the motions playing on its layers
+Character	0x1d4	u8	update_state	monsters: 0 appearing, 1 live (monster_update), 2 dying, 3 dead
+Character	0x1d5	u8	action_phase	the current action's phase (0: just chosen, it starts itself)
+Character	0x1d7	u8	action_countdown	hunters: frames left in a step of an action, -1 a frame
+Character	0x1e6	u16	player	hunters: which player (compare GameData.local_player)
+Character	0x1e8	u8	kind	monsters: species (index into the species table, 0x1d0 bytes each); hunters: current weapon type
+Character	0x1f0	u32[3]	angle	x, y, z angles, 0x10000 a turn (only the low 16 bits are kept)
+Character	0x200	vec3	position
+Character	0x210	vec3	last_position	position before this frame's update
+Character	0x240	vec3	speed	added to position each frame by the ballistic step (monster_fall)
+Character	0x250	vec3	acceleration	added to speed each frame by the ballistic step
+Character	0x276	u8	countdown	-1 a frame down to 0
+Character	0x298	u8	action_group	the current action is (action_group, action_id); hunters: group 0 is moving and most things, 5 using items
+Character	0x299	u8	action_id	hunters, group 0: 0 standing, 1 walking, 3 running (weapon sheathed), 0x47 gathering, 0x51 mining, 0x52 catching bugs
+Character	0x29a	s16	area	the area it is in (compare GameData.area)
+Character	0x2e4	s16	health
+Character	0x33c	u8	paused	non-zero: character_update skips it
+Character	0x3f4	s32	action_time	+2 a frame since the current action began (reset to 10000 after 99999)
+Character	0x414	s32	action_timer	frames left in the current step of an action (monsters: set by each species' code, 0x3c, 0x96, 0x708...; hunters: 10 to draw or sheathe...); a few steps count it up
+Character	0x45c	u16	held_time	+2 a frame while flags 0x400001 are set
+Character	0x460	size
+
+# A character's animation (Character.motion): up to four layers of motions, each blending in from the one before.
+MotionLayer	0x10	f32	frame	the motion's frame, + speed a frame
+MotionLayer	0x14	f32	speed	frames a frame: 2.0 at 30 fps (the 60 fps code makes 1.0)
+MotionLayer	0x18	f32	last_frame
+MotionLayer	0x1c	f32	frames
+MotionLayer	0x20	f32	blend_frame	the frame the motion before stopped at, blended from
+MotionLayer	0x24	f32	blend_rate	1 / blend frames: added to blend_weight a frame
+MotionLayer	0x28	f32	blend_last_frame
+MotionLayer	0x2c	f32	blend_frames_total
+MotionLayer	0x30	s32	blend_left	frames of blending left
+MotionLayer	0x34	f32	blend_weight	of the new motion, 0 to 1
+MotionLayer	0x38	void*	data	the motion's data
+MotionLayer	0x3c	u16	layer_flags
+MotionLayer	0x3e	s8	blend_direction
+MotionLayer	0x3f	u8	blending
+MotionLayer	0x40	size
+Motion	0x0	MotionLayer[4]	layers
+Motion	0x110	void*	model	the skeleton the motions move
+Motion	0x122	u16	bone_count
+Motion	0x124	size
+
+# The hunter (on hunts the update is game_task's hunter_update, its timers hunter_update_timers).
+Hunter	0x0	Character	base	all of Character's fields
+Hunter	0x2ba	s16	timer_2ba	counts down in hunter_update_timers
+Hunter	0x35e	s16	timer_35e	counts down in hunter_update_timers
+Hunter	0x3d6	s16	timer_3d6	counts down in hunter_update_timers
+Hunter	0x3da	s16	timer_3da	counts down in hunter_update_timers
+Hunter	0x324	s16	motion_request	the motion asked for by hunter_request_motion (the upper body's is + 100, at +0x326)
+Hunter	0x32c	s16	motion_request_flags
+Hunter	0x334	s16	motion_request_blend	blend frames for motion_start
+Hunter	0x41c	s16	red_health	health that comes back by itself, every 60 frames (15, 30, 120 or 240 with skills)
+Hunter	0x41e	s16	max_health	at most 150
+Hunter	0x442	s16	timer_442	counts down in hunter_update_timers
+Hunter	0x480	u32	pad_held	the pad, copied by hunter_read_pad each frame (nothing while a message waits)
+Hunter	0x484	u32	pad_pressed	the buttons pressed this frame: what the hunter acts on (Circle 0x2000 gathers, Square 0x8000 uses an item)
+Hunter	0x488	u32	pad_released
+Hunter	0x46a	u8	timer_46a	counts down in hunter_countdowns
+Hunter	0x468	s16	timer_468	counts down in hunter_update_timers
+Hunter	0x552	u8	timer_552	counts down in hunter_update_timers
+Hunter	0x55a	s16	stamina	changed through hunter_add_stamina
+Hunter	0x5f0	s8	timer_5f0	counts down in hunter_countdowns
+Hunter	0x610	s16	timer_610	counts down in hunter_update_timers
+Hunter	0x620	s16	timer_620	counts down in hunter_update_timers
+Hunter	0x622	s16	effect_622	an item's effect: counts down, message 0x15 when it runs out
+Hunter	0x624	s16	effect_624	an item's effect: counts down (by 1 or 2 in cold areas), message 0x12 when it runs out
+Hunter	0x626	s16	effect_626	an item's effect: counts down (by 1 or 2 in hot areas), message 0x13 when it runs out
+Hunter	0x628	s16	effect_628	counts down in hunter_update_timers
+Hunter	0x62a	s16	timer_62a	counts down in hunter_update_timers
+Hunter	0x62c	u8	timer_62c	counts down in hunter_countdowns
+Hunter	0x62e	s16	max_stamina
+Hunter	0x630	s16	timer_630	counts down in hunter_countdowns
+Hunter	0x632	s16	hunger	counts down from 10800 (6 minutes), faster in cold or hot areas; at 0 the most stamina drops
+Hunter	0x61c	s32	l_held_frames	frames L has been held, counted by hunter_read_pad (0 when pressed); under 10 when let go, the camera turns back (hunter_tapped_l)
+Hunter	0x648	s16	selected_slot	the item pouch slot chosen in the item bar (GameData.item_pouch)
+Hunter	0x672	s16	timer_672	counts down in hunter_update_timers
+Hunter	0x10f4	s16	timer_10f4	counts down in hunter_update_timers (set to 9000)
+Hunter	0x10f6	s16	timer_10f6	counts down in hunter_update_timers
+Hunter	0x10f8	s16	timer_10f8	counts down in hunter_update_timers
+Hunter	0x10fa	s16	timer_10fa	counts down in hunter_update_timers (set to 1800)
+Hunter	0x110e	s16	timer_110e	counts down in hunter_update_timers (set to 5400)
+Hunter	0x1112	s16	timer_1112	counts down in hunter_update_timers (set to 1800)
+Hunter	0x1140	s16	timer_1140	-1 every 10 frames in some states
+Hunter	0x1146	s16	timer_1146	counts down in hunter_update_timers
+Hunter	0x11b4	s16	timer_11b4	counts down in hunter_update_timers (set to 9000)
+Hunter	0xa110	size
+
+# A monster (game_task). Its live update is monster_update.
+Monster	0x0	Character	base	all of Character's fields
+Monster	0x4b0	f32	motion_speed_scale	times 2.0 (1.0 with the 60 fps code) into the motion layers' speed
+Monster	0x4b4	u8	timer_4b4	counts down in monster_update
+Monster	0x4b6	u8	timer_4b6	counts down in monster_update
+Monster	0x4b9	u8	engaged	1 while it fights
+Monster	0x4c0	u8	timer_4c0	counts down in monster_update
+Monster	0x4c4	s16	timer_4c4	counts down in monster_update; at 0 calls method 0xec
+Monster	0x512	u8	timer_512	counts down in monster_update
+Monster	0x521	u8	ailment	which ailment or trap holds it: 1, 2, 4 or 5 (the timer of each below)
+Monster	0x529	u8	timer_529	counts down in monster_update
+Monster	0x54e	s16	timer_54e	counts down in monster_update
+Monster	0x550	s16	timer_550	counts down in monster_update while engaged
+Monster	0x554	s32[4]	hate	towards each player, wearing off each frame
+Monster	0x56c	s16	rage_timer	counts down while enraged (flags 0x20); at 0 it calms down
+Monster	0x575	u8	timer_575	counts down in monster_update
+Monster	0x57a	u8	timer_57a	counts down in monster_update
+Monster	0x5f0	u8	timer_5f0	counts down in monster_update
+Monster	0x5f2	u8	timer_5f2	counts down in monster_update
+Monster	0x634	u8	timer_634	counts down in monster_update
+Monster	0x635	u8	timer_635	counts down in monster_update
+Monster	0x638	u32	monster_flags	0x20 enraged, 0x80, 0x800 in the shown area, 0x8000
+Monster	0x77c	s16	ailment_timer_2	while ailment is 2
+Monster	0x77e	s16	ailment_timer_1	while ailment is 1
+Monster	0x780	s16	ailment_timer_4	while ailment is 4
+Monster	0x782	s16	ailment_timer_5	while ailment is 5
+Monster	0x7d0	size
+
+# A villager (lobby_task). Its update is villager_update, as character_update and more.
+Villager	0x0	Character	base	all of Character's fields
+Villager	0x4ec	u16	cycle	+1 a frame, back to 0 after 100 (villager_update)
+Villager	0x4fc	u16	motion_time	frames in the current motion, +1 a frame (villager_motion_update)
+
+# The camera manager (pointer at 0x089CBBE4) and its six cameras.
+Camera	0x0	vec3	eye	where it is shown from
+Camera	0x10	vec3	target	the point it looks at
+Camera	0x30	vec3	direction	target - eye
+Camera	0x91	u8	running	set while it runs: the field camera while shown, a cutscene camera while it moves; camera 5's keeps the pad from the field camera
+Camera	0x1a0	size
+CameraHeight	0x4	f32	eye_height	the eye's height above the hunter
+CameraHeight	0x8	f32	distance	the eye's distance from the hunter
+CameraHeight	0x10	f32	look_height	the height of the point looked at above the hunter's feet
+CameraHeight	0x18	f32	clearance	the eye's least height above the floor
+CameraHeight	0x1c	size
+FieldCamera	0x0	Camera	base	all of Camera's fields; the camera on hunts that follows the hunter (field_camera_update)
+FieldCamera	0x9c	u8	blending	blending from the camera shown before
+FieldCamera	0xb0	vec3	follow	the point the game looks at
+FieldCamera	0xe0	vec3	wanted_eye	where the game's height puts the eye
+FieldCamera	0xf4	f32	wanted_target_height
+FieldCamera	0x110	CameraHeight*	height	the height in use (the d-pad's up and down step between five)
+FieldCamera	0x120	u16	yaw
+FieldCamera	0x122	u16	shown_yaw
+FieldCamera	0x124	u16	buttons_used	the held buttons it took this frame (field_camera_read_pad): left and right turn it
+FieldCamera	0x126	u16	pressed_used	the pressed buttons it took this frame: up and down change the height
+EventCamera	0x0	Camera	base	all of Camera's fields; a cutscene camera: a script (event_camera_run_script) or a track of keys (event_camera_track_update)
+EventCamera	0x94	s16	step_left	script: frames left in the step, counted down to -1; track: frames since it began (key times are twice this)
+EventCamera	0x96	s16	step_length	script: frames the step lasts (-1 between steps)
+EventCamera	0x98	u8	mode	1 script, 2 track
+EventCamera	0x9c	u8	track_state
+EventCamera	0xe0	void*	commands	script: the next command; track: the keys (48 bytes each, starting with their time; under 0 ends them)
+EventCamera	0xe4	void*	step_commands	script: where the current step's commands start
+EventCamera	0xee	u8	event
+CameraManager	0x14	u8	level
+CameraManager	0x20	vec3	eye	the shown camera's eye
+CameraManager	0x30	vec3	target	the shown camera's target
+CameraManager	0xb0	Camera[6]	cameras	0 is the field camera
+CameraManager	0xa70	u16	held_buttons	the pad's, copied each frame
+CameraManager	0xa72	u16	pressed_buttons	pressed this frame
+CameraManager	0xa7c	u32	event_parameter
+CameraManager	0xa80	u8	event_request	a cutscene camera to start
+CameraManager	0xa84	Hunter*	hunter	the hunter the cameras follow
+CameraManager	0xa8c	u8	last_shown_camera
+CameraManager	0xa8d	u8	shown_camera	0 the field camera
+CameraManager	0xa90	void*	zone	the camera zone the hunter is in
+CameraManager	0xa94	size
+
+# The game's data and save (pointer at 0x089CC438).
+GameData	0x1c	u16	frame_count	+1 a frame (play_time_update); effects and timers act every so many frames by it
+GameData	0x28	u8	local_player
+GameData	0x4468	u32	play_time	seconds, at most 35999999
+GameData	0x6ade1	u8	camera_controls	0 normal, 1 up and down reversed, 2 left and right reversed too
+GameData	0x6aea6	PouchSlot[25]	item_pouch	the items carried
+GameData	0x6af0e	u16	area	the area shown now
+GameData	0x6af10	u8	stage
+GameData	0x6af14	u32	game_flags	bit 0: playing with others; 0x200: the priority changer raises the main thread above the loader
+GameData	0x6af18	size
+
+# The quest being played (pointer at 0x08A62C7C).
+QuestInfo	0x10	s32	time_limit	frames
+QuestInfo	0x14	size
+Quest	0x10	s32	time_left	frames
+Quest	0x68	QuestInfo*	info
+Quest	0x68c	size
+
+# The game's main object (pointer at 0x08A631A0).
+Game	0xf7a554	u32	frame_count	+1 a frame (main_loop); for things that pulse, blink and turn by themselves
+Game	0xf7a564	s32	check_exit_thread
+Game	0xf7a57c	u32	flags
+Game	0xf7f020	s32	priority_changer_thread
+Game	0xf7f024	s32	main_thread	user_main; at 48, raised to 38 by the priority changer while GameData.game_flags has 0x200
+Game	0xf7f028	s32	priority_timer	the ChangeThreadVTimer
+Game	0xf7f02c	s32	priority_timer_count
+Game	0xf7f030	s32	second_thread	moved between 49 and 39 like the main thread, while second_thread_on
+Game	0xf7f034	u8	second_thread_on
+Game	0xf7f038	size
+
+# The message window (pointer at 0x089CBBEC).
+MessageWindow	0x5ec	char*	text
+MessageWindow	0x5f0	u8	message_flags	1 shown, 2 and 4 a choice, 8 more to come, 0x10 closing, 0x20 closed
+MessageWindow	0x5f2	s16	shown	letters typed out so far
+MessageWindow	0x5f4	u32	shown_at	the time it was typed out to
+MessageWindow	0x5f8	u8	more_sound	played the "more" sound
+MessageWindow	0x604	u8	busy
+MessageWindow	0x608	size
+
+# A task: the game's top-level state machine for the village (lobby_task) or a hunt (game_task).
+Task	0x4	u32[6]	coroutine	its saved context, resumed each frame by task_resume
+Task	0x1c	s32	state
+Task	0x28	s32	wait	village: frames left to wait in some states, -1 a frame
+Task	0x30	s32	frames	hunt: +1 a frame
+Task	0x60	s32	fade_length
+Task	0x64	s32	fade_time
+Task	0x68	size
+
+# An area's stage (code in the stageNNN.ovl loaded at 0x09D63000).
+Stage	0x1c0	u16	effect_count	+1 a frame; effects start when it is a multiple of 128
+Stage	0x1c2	u16	effect_turn	+0x2e a frame
+Stage	0x3a0	s16	effect_state
+Stage	0x3a2	s16	effect_timer	-1 a frame while effect_state is not 0
+Stage	0x3a4	size
+
+# Things that animate by themselves (game_sub, lobby_task).
+TextureAnimation	0x28	u32	animation_flags	0x38 clear: frames wrap; 0x40: steps on even frame counts only
+TextureAnimation	0x50	u32	frames_u
+TextureAnimation	0x54	u32	frames_v
+TextureAnimation	0x5c	u32	frame_u
+TextureAnimation	0x60	u32	frame_v
+TextureAnimation	0x64	size
+Flipbook	0x34	void*	definition	+4 (village) or +0x40/+0x42 (hunts): how many frames
+Flipbook	0x38	u16	frame
+Flipbook	0x3a	u16	frame2
+Flipbook	0x3c	size
+Marker	0x38	s16	phase	+1 a frame while shown; it bobs by sin(phase & 0x3f)
+Marker	0x44	void*	shown
+Marker	0x48	u32	marker_flags
+Marker	0x4c	size
+
+# The pad (pointer at 0x08A62C64), read once a frame by pad_read.
+Pad	0x0	u16	buttons	the buttons held
+Pad	0x2	s16	stick_x	-127 to 127
+Pad	0x4	s16	stick_y	-127 to 127
+Pad	0x6	s16	stick_tilt	how far the stick is pushed, 0 to 127
+Pad	0x8	s16	stick_direction	degrees
+Pad	0xc	f32	stick_angle	radians
+Pad	0x10	u32	last_held	pad_held the frame before
+Pad	0x14	u8	repeat_count	+1 a frame while the same buttons stay held: at 13 they repeat and it goes back to 10
+Pad	0x15	u8	hold_switch	the HOLD switch is on: the pad reads as nothing
+Pad	0x16	u8	home	the HOME button is held
+Pad	0x17	u8	disabled	the pad reads as nothing
+Pad	0x18	size
+
+# Overlays (code loaded from DATA.BIN) start with this header.
+OverlayHeader	0x0	u32	magic	"MWo3"
+OverlayHeader	0x4	u32	id	7 lobby_task, 10 game_task, 14 game_sub, 32+ stages
+OverlayHeader	0x8	u32	load_address
+OverlayHeader	0xc	u32	code_size
+OverlayHeader	0x10	u32	data_size
+OverlayHeader	0x14	u32	bss_size
+OverlayHeader	0x40	size
+
+# An item pouch slot (GameData.item_pouch).
+PouchSlot	0x0	s16	item	0 for none; pickaxes 0x90, 0x91, 0x92, 0x4c9; bug nets 0x94, 0x95, 0x96, 0x4ca
+PouchSlot	0x2	s16	count
+PouchSlot	0x4	size
+
+# A place to gather on a hunt (quest_gather_points: the area's, ending with a position x of -1.0).
+GatherPoint	0x0	vec3	position
+GatherPoint	0xc	f32	radius	how far in x and z a hunter can be to gather (and from 200 below to 100 above in y)
+GatherPoint	0x10	u16	table	the quest's gather table (low 15 bits) the item is rolled from
+GatherPoint	0x12	s16	gathers_left	0: nothing left; 255: never runs out
+GatherPoint	0x14	s16	kind	0 gather (Circle), 3 mine (Square with a pickaxe), 4 catch bugs (Square with a bug net)
+GatherPoint	0x16	s16	sure_gathers	gathers before each one can be the last (by chance: less likely with the gathering skills)
+GatherPoint	0x18	size

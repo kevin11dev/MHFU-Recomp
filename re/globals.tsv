@@ -1,0 +1,24 @@
+# address	name	type	notes
+0x089CC438	game_data	GameData*	the game's data and save (0x09999C60 once loaded)
+0x089CBBE4	camera_manager	CameraManager*
+0x089CBBEC	message_window	MessageWindow*
+0x08A62C64	pad	Pad*
+0x08A62C68	pad_held	u32	buttons held; the stick's direction as d-pad buttons in the high 16 bits
+0x08A62C6C	pad_pressed	u32	pressed this frame
+0x08A62C70	pad_released	u32	released this frame
+0x08A62C74	pad_repeat	u32	pressed this frame, or held long enough to repeat (menus move by it)
+0x08A62C78	pad_stick_angle	s16	the stick's direction, 0x10000 a turn
+0x08A62C7A	pad_stick_tilt	s16	how far the stick is pushed, 0 to 127
+0x08A62C7C	quest	Quest*	the quest being played
+0x08A631A0	game	Game*	the game's main object
+0x08A631A8	renderer	void*	draw lists (renderer_begin_frame)
+0x08A62D84	video_player	void*	+0x14: non-zero while a video plays (the word at 0x08B59914)
+0x08A62D8C	sound	void*	the sound effect player (sound_play)
+0x08A62C48	vblank_count	u32	counted by vblank_handler
+0x08B59914	video_playing	u32	the 60 fps code runs the game at 60 while this is 0
+0x09A4F060	stage_manager	void*	method 0x28 returns the area's info (+0x3c: 3 cold, 4 hot)
+0x09A4F0C4	players	void*	player_get(players, i): the hunter of player i
+0x09A0B56C	sound_frame_count	u32	+1 a frame (sound_frame)
+0x09D1A060	collision_world	void*	in game_sub's data; the world collision_sweep_sphere and collision_floor_height work on
+0x08802048	fps60_stamina_every_other	u32	written by the 60 fps code: which call of hunter_add_stamina adds a small change
+0x088020D0	fps60_monster_count_every_other	u32	written by the 60 fps code: which call of a monster's countdown at 0x09ADD930 (game_task) counts
