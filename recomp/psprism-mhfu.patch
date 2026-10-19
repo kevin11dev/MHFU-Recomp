@@ -1919,10 +1919,10 @@ index 0000000..6f5b6e4
 +}  // namespace refract::host::gpu
 diff --git a/refract/src/host/gpu_vulkan.cpp b/refract/src/host/gpu_vulkan.cpp
 new file mode 100644
-index 0000000..cb7bec9
+index 0000000..8e06291
 --- /dev/null
 +++ b/refract/src/host/gpu_vulkan.cpp
-@@ -0,0 +1,1948 @@
+@@ -0,0 +1,2068 @@
 +// The Vulkan backend (gpu.hpp): Vulkan 1.0 with VK_KHR_swapchain, loaded through SDL (or, for an
 +// offscreen window, from the system's loader, drawing into an image of its own), drawing as
 +// gpu_gl.cpp does with the same shaders (vulkan_shaders/).
@@ -1961,7 +1961,10 @@ index 0000000..cb7bec9
 +#include <functional>
 +#include <iterator>
 +#include <map>
++#include <mutex>
 +#include <optional>
++#include <sstream>
++#include <thread>
 +#include <unordered_map>
 +
 +namespace refract::host::gpu {
@@ -2177,6 +2180,37 @@ index 0000000..cb7bec9
 +  return key;
 +}
 +
++// The pipeline a key stands for (keys saved by an earlier run), if it's one.
++std::optional<Pipeline> pipeline_from_key(std::uint64_t key) {
++  Pipeline pipeline;
++  pipeline.primitive = static_cast<std::uint8_t>(key & 7U);
++  pipeline.color_mask = static_cast<std::uint8_t>((key >> 3U) & 0xfU);
++  pipeline.cull = ((key >> 7U) & 1U) != 0U;
++  if (pipeline.cull) pipeline.front_clockwise = ((key >> 8U) & 1U) != 0U;
++  pipeline.blend = ((key >> 9U) & 1U) != 0U;
++  if (pipeline.blend) {
++    pipeline.blend_source = static_cast<Blend>((key >> 10U) & 0xfU);
++    pipeline.blend_destination = static_cast<Blend>((key >> 14U) & 0xfU);
++    pipeline.blend_operation = static_cast<std::uint8_t>((key >> 18U) & 7U);
++  }
++  pipeline.depth = ((key >> 21U) & 1U) != 0U;
++  if (pipeline.depth) {
++    pipeline.depth_function = static_cast<std::uint8_t>((key >> 22U) & 7U);
++    pipeline.depth_write = ((key >> 25U) & 1U) != 0U;
++  }
++  pipeline.stencil = ((key >> 26U) & 1U) != 0U;
++  if (pipeline.stencil) {
++    pipeline.stencil_function = static_cast<std::uint8_t>((key >> 27U) & 7U);
++    pipeline.stencil_fail = static_cast<std::uint8_t>((key >> 30U) & 7U);
++    pipeline.stencil_depth_fail = static_cast<std::uint8_t>((key >> 33U) & 7U);
++    pipeline.stencil_pass = static_cast<std::uint8_t>((key >> 36U) & 7U);
++  }
++  if (pipeline.primitive > 4U || static_cast<std::uint8_t>(pipeline.blend_source) > 10U ||
++      static_cast<std::uint8_t>(pipeline.blend_destination) > 10U || pipeline_key(pipeline) != key)
++    return std::nullopt;
++  return pipeline;
++}
++
 +struct Buffer {
 +  VkBuffer buffer{};
 +  VkDeviceMemory memory{};
@@ -2210,6 +2244,7 @@ index 0000000..cb7bec9
 +  VkImageLayout layout{VK_IMAGE_LAYOUT_UNDEFINED};  // as the commands recorded so far leave it
 +  std::uint64_t drawn_in{};  // the last frame that draws with it
 +  bool target{};  // a render target's colour
++  bool sampled{};  // a render target's colour that draws have sampled: made ready for that as passes end
 +};
 +
 +class VulkanTarget final : public Target {
@@ -2249,6 +2284,8 @@ index 0000000..cb7bec9
 +      : window_(window), pipeline_cache_path_(std::move(pipeline_cache)) {}
 +
 +  ~VulkanBackend() override {
++    stop_warm_up_ = true;
++    if (warm_up_.joinable()) warm_up_.join();
 +    if (device_ != nullptr) {
 +      vk_.vkDeviceWaitIdle(device_);
 +      save_pipeline_cache();
@@ -2358,6 +2395,7 @@ index 0000000..cb7bec9
 +    begin_frame();
 +    // Drawn with in this frame already: those draws keep the old contents, in the old image.
 +    if (image.drawn_in == frame_number_) {
++      ++stats_.new_versions;
 +      retire_image(image.image, image.view, image.memory);
 +      image.image = VK_NULL_HANDLE;
 +      image.view = VK_NULL_HANDLE;
@@ -2482,12 +2520,15 @@ index 0000000..cb7bec9
 +    begin_frame();
 +    auto* texture = draw.texture != nullptr ? static_cast<VulkanImage*>(draw.texture) : dummy_.get();
 +    if (texture->image == VK_NULL_HANDLE) texture = dummy_.get();
++    if (texture->target) texture->sampled = true;
 +    if (texture->target && texture->layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
++      if (pass_target_ != nullptr) ++stats_.sample_breaks;
 +      end_pass();
 +      change_layout(frame().draw, texture->image, VK_IMAGE_ASPECT_COLOR_BIT, texture->layout,
 +                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 +    }
 +    texture->drawn_in = frame_number_;
++    ++stats_.draws;
 +    begin_target_pass(target);
 +    auto command = frame().draw;
 +    const auto pipeline = geometry_pipeline(draw.pipeline);
@@ -2590,6 +2631,7 @@ index 0000000..cb7bec9
 +      auto layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 +      change_layout(current.draw, shown, VK_IMAGE_ASPECT_COLOR_BIT, layout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 +    }
++    stats_.record_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frame_started_).count();
 +    vk_.vkEndCommandBuffer(current.upload);
 +    vk_.vkEndCommandBuffer(current.draw);
 +    const VkCommandBuffer commands[] = {current.upload, current.draw};
@@ -2634,6 +2676,16 @@ index 0000000..cb7bec9
 +    }
 +    recording_ = false;
 +    acquired_ = false;
++    if (print_stats_ && ++stats_.frames % 300U == 0U) {
++      const auto per = [&](double value) { return value / 300.0; };
++      std::fprintf(stderr,
++                   "[refract:vulkan] per frame: %.0f draws, %.1f passes (%.1f broken to sample), %.1f uploads (%.0f KB, "
++                   "%.2f new images), %.2f pipelines made (%.2f ms); %.2f ms recording, %.2f ms waiting for the GPU\n",
++                   per(stats_.draws), per(stats_.passes), per(stats_.sample_breaks), per(stats_.uploads),
++                   per(stats_.upload_bytes) / 1024.0, per(stats_.new_versions), per(stats_.pipelines),
++                   per(stats_.pipeline_ms), per(stats_.record_ms), per(stats_.wait_ms));
++      stats_ = {};
++    }
 +    window_begun_ = false;
 +    frame_index_ = (frame_index_ + 1U) % frames_.size();
 +    if (pipelines_unsaved_ > 0U &&
@@ -2890,6 +2942,31 @@ index 0000000..cb7bec9
 +      vk_.vkCreatePipelineCache(device_, &cache, nullptr, &pipeline_cache_);
 +    }
 +    last_cache_save_ = std::chrono::steady_clock::now();
++    // The pipelines earlier runs made, made again (from the cache, quickly) on another core before
++    // the game needs them: making one the first time a draw needs it holds up the frame.
++    std::vector<std::uint64_t> keys;
++    if (!pipeline_cache_path_.empty()) {
++      std::ifstream file(pipeline_cache_path_ + ".keys");
++      std::string line;
++      while (std::getline(file, line))
++        if (!line.empty()) keys.push_back(std::strtoull(line.c_str(), nullptr, 16));
++    }
++    if (!keys.empty())
++      warm_up_ = std::thread([this, keys] {
++        for (const auto key : keys) {
++          if (stop_warm_up_) return;
++          {
++            std::lock_guard lock(pipelines_mutex_);
++            if (pipelines_.count(key) != 0U) continue;
++          }
++          const auto state = pipeline_from_key(key);
++          if (!state) continue;
++          const auto pipeline = make_pipeline(geometry_vertex_, geometry_fragment_, target_pass_, &*state, true);
++          if (pipeline == VK_NULL_HANDLE) continue;
++          std::lock_guard lock(pipelines_mutex_);
++          if (!pipelines_.emplace(key, pipeline).second) vk_.vkDestroyPipeline(device_, pipeline, nullptr);
++        }
++      });
 +
 +    for (auto& frame : frames_) {
 +      VkCommandPoolCreateInfo pool{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -3085,10 +3162,18 @@ index 0000000..cb7bec9
 +
 +  VkPipeline geometry_pipeline(const Pipeline& state) {
 +    const auto key = pipeline_key(state);
-+    if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
++    {
++      std::lock_guard lock(pipelines_mutex_);
++      if (const auto found = pipelines_.find(key); found != pipelines_.end()) return found->second;
++    }
++    const auto started = std::chrono::steady_clock::now();
 +    const auto pipeline = make_pipeline(geometry_vertex_, geometry_fragment_, target_pass_, &state, true);
-+    pipelines_.emplace(key, pipeline);
-+    return pipeline;
++    ++stats_.pipelines;
++    stats_.pipeline_ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
++    std::lock_guard lock(pipelines_mutex_);
++    const auto [found, made] = pipelines_.emplace(key, pipeline);
++    if (!made) vk_.vkDestroyPipeline(device_, pipeline, nullptr);  // the warm-up made it meanwhile
++    return found->second;
 +  }
 +
 +  void save_pipeline_cache() {
@@ -3107,6 +3192,19 @@ index 0000000..cb7bec9
 +    }
 +    std::error_code error;
 +    std::filesystem::rename(partial, pipeline_cache_path_, error);
++    // Which pipelines, for making them ahead next time.
++    std::ostringstream keys;
++    {
++      std::lock_guard lock(pipelines_mutex_);
++      for (const auto& [key, pipeline] : pipelines_)
++        if (pipeline != VK_NULL_HANDLE) keys << std::hex << key << '\n';
++    }
++    {
++      std::ofstream file(pipeline_cache_path_ + ".keys.new", std::ios::trunc);
++      file << keys.str();
++      if (!file) return;
++    }
++    std::filesystem::rename(pipeline_cache_path_ + ".keys.new", pipeline_cache_path_ + ".keys", error);
 +  }
 +
 +  // Memory --------------------------------------------------------------------------------
@@ -3278,6 +3376,8 @@ index 0000000..cb7bec9
 +      if (current.staging.mapped == nullptr) return;
 +    }
 +    const auto offset = current.staging_used;
++    ++stats_.uploads;
++    stats_.upload_bytes += bytes;
 +    if (rgba != nullptr) std::memcpy(current.staging.mapped + offset, rgba, static_cast<std::size_t>(bytes));
 +    else std::memset(current.staging.mapped + offset, 0, static_cast<std::size_t>(bytes));
 +    current.staging_used = (offset + bytes + 15U) / 16U * 16U;
@@ -3324,7 +3424,10 @@ index 0000000..cb7bec9
 +  void begin_frame() {
 +    if (recording_) return;
 +    auto& current = frame();
++    const auto waiting = std::chrono::steady_clock::now();
 +    vk_.vkWaitForFences(device_, 1U, &current.done, VK_TRUE, UINT64_MAX);
++    frame_started_ = std::chrono::steady_clock::now();
++    stats_.wait_ms += std::chrono::duration<double, std::milli>(frame_started_ - waiting).count();
 +    run_retired(current);
 +    vk_.vkResetCommandPool(device_, current.command_pool, 0U);
 +    for (auto pool : current.descriptor_pools) vk_.vkResetDescriptorPool(device_, pool, 0U);
@@ -3347,8 +3450,13 @@ index 0000000..cb7bec9
 +    std::fill(std::begin(stencil_), std::end(stencil_), 0x100U);
 +  }
 +
++  // Ends the render pass open. A target that draws sample is made ready for that straight away,
++  // so a draw sampling it later doesn't have to break another target's pass to.
 +  void end_pass() {
 +    if (pass_target_ != nullptr || window_pass_) vk_.vkCmdEndRenderPass(frame().draw);
++    if (pass_target_ != nullptr && pass_target_->image.sampled)
++      change_layout(frame().draw, pass_target_->image.image, VK_IMAGE_ASPECT_COLOR_BIT, pass_target_->image.layout,
++                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 +    pass_target_ = nullptr;
 +    window_pass_ = false;
 +  }
@@ -3363,6 +3471,7 @@ index 0000000..cb7bec9
 +    if (target.depth_layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 +      change_layout(command, target.depth, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
 +                    target.depth_layout, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
++    ++stats_.passes;
 +    VkRenderPassBeginInfo begin{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
 +    begin.renderPass = target_pass_;
 +    begin.framebuffer = target.framebuffer;
@@ -3792,7 +3901,10 @@ index 0000000..cb7bec9
 +  std::array<VkSampler, 16U> samplers_{};
 +  VkPipelineCache pipeline_cache_{};
 +  std::unordered_map<std::uint64_t, VkPipeline> pipelines_;
-+  std::size_t pipelines_unsaved_{};
++  std::mutex pipelines_mutex_;  // the warm-up thread makes pipelines too
++  std::atomic<std::size_t> pipelines_unsaved_{};
++  std::thread warm_up_;
++  std::atomic_bool stop_warm_up_{};
 +  std::chrono::steady_clock::time_point last_cache_save_;
 +  std::array<Frame, 2U> frames_{};
 +  std::size_t frame_index_{};
@@ -3830,6 +3942,14 @@ index 0000000..cb7bec9
 +  bool surface_lost_{};
 +  int made_for_[2]{};  // the window size the swapchain was made for
 +  bool shutting_down_{};
++  // REFRACT_VULKAN_STATS=1 prints what the frames cost, every 300.
++  struct Stats {
++    std::uint64_t frames{}, draws{}, passes{}, sample_breaks{}, uploads{}, upload_bytes{}, new_versions{},
++        pipelines{};
++    double pipeline_ms{}, wait_ms{}, record_ms{};
++  } stats_;
++  bool print_stats_{std::getenv("REFRACT_VULKAN_STATS") != nullptr};
++  std::chrono::steady_clock::time_point frame_started_;
 +  VulkanImage offscreen_image_{*this};
 +  VkFramebuffer offscreen_framebuffer_{};
 +};
@@ -5091,10 +5211,10 @@ index 0000000..410f06e
 +} // namespace refract::host
 diff --git a/refract/src/host/sdl_gles.cpp b/refract/src/host/sdl_gles.cpp
 new file mode 100644
-index 0000000..66194bb
+index 0000000..567cb29
 --- /dev/null
 +++ b/refract/src/host/sdl_gles.cpp
-@@ -0,0 +1,2251 @@
+@@ -0,0 +1,2261 @@
 +// SDL2 host backend, for Linux and Android (and anywhere else SDL2 is), drawing with Vulkan or
 +// OpenGL ES 3.0 (gpu.hpp). It follows the Direct3D 11 backend: the GE emits geometry batches
 +// already transformed to clip space, which are drawn into one render target per PSP framebuffer
@@ -6573,7 +6693,7 @@ index 0000000..66194bb
 +std::atomic_bool fps_counter_shown{};
 +std::atomic_uint64_t display_flips{};
 +
-+void draw_fps_counter(double rate);
++void draw_fps_counter(double rate, double drawing_ms);
 +
 +// Drawing ---------------------------------------------------------------------------
 +
@@ -6618,11 +6738,13 @@ index 0000000..66194bb
 +  canvas_text(left + (right - left - width) / 2, baseline, size, text, abgr, bold);
 +}
 +
-+void draw_fps_counter(double rate) {
++// The game's frames a second, and how long drawing a picture takes the renderer (its share of a
++// frame: when it's most of one, drawing holds the game up).
++void draw_fps_counter(double rate, double drawing_ms) {
 +  active_canvas = &fps_canvas;
 +  std::fill(fps_canvas.begin(), fps_canvas.end(), std::uint8_t{0});
-+  char text[32];
-+  std::snprintf(text, sizeof(text), "%.0f fps", rate);
++  char text[48];
++  std::snprintf(text, sizeof(text), "%.0f fps, drawing %.0f ms", rate, drawing_ms);
 +  const auto width = refract::font::measure_ui_text(22.0F, text, true);
 +  canvas_fill(8, 8, 8 + width + 20, 42, 0xa0000000U);
 +  canvas_text(18, 33, 22.0F, text, 0xffffffffU, true);
@@ -6869,6 +6991,8 @@ index 0000000..66194bb
 +  std::uint32_t fps_window_start = SDL_GetTicks();
 +  std::uint64_t fps_window_flips = display_flips.load();
 +  bool fps_changed = true;
++  double drawing_time{};  // milliseconds drawing pictures, for the FPS counter
++  std::uint64_t drawn_pictures{};
 +  // With smooth motion, a picture every 1/interpolation_rate s, but at most one per refresh of
 +  // the screen, should vsync not wait. Each is due one interval after the last one was due, so
 +  // the pictures keep to the rate on average when vsync rounds each to a refresh (120 a second
@@ -6957,6 +7081,7 @@ index 0000000..66194bb
 +      next_picture += interval;
 +    }
 +    int width{}, height{};
++    const auto drawing_started = Clock::now();
 +    backend->drawable_size(width, height);
 +    if (new_drawing) renderer->draw_new_geometry();
 +    renderer->present(width, height, std::chrono::steady_clock::now());
@@ -6979,7 +7104,10 @@ index 0000000..66194bb
 +      if (now - fps_window_start >= 500U) {
 +        const auto flips = display_flips.load(std::memory_order_relaxed);
 +        draw_fps_counter(static_cast<double>(flips - fps_window_flips) * 1000.0 /
-+                         static_cast<double>(now - fps_window_start));
++                             static_cast<double>(now - fps_window_start),
++                         drawn_pictures != 0U ? drawing_time / static_cast<double>(drawn_pictures) : 0.0);
++        drawing_time = 0.0;
++        drawn_pictures = 0U;
 +        fps_window_start = now;
 +        fps_window_flips = flips;
 +        fps_changed = true;
@@ -6995,6 +7123,8 @@ index 0000000..66194bb
 +      present_window(frame, "frame", frame != drawn_frame);
 +      drawn_frame = frame;
 +    }
++    drawing_time += std::chrono::duration<double, std::milli>(Clock::now() - drawing_started).count();
++    ++drawn_pictures;
 +    if (exit_after != 0U && frame >= exit_after) break;
 +  }
 +  shutdown_audio();
