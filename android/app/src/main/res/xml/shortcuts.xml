@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Holding the app's icon: moving the game's save in and out of the app (SetupActivity). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="export_save"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/export_save">
+        <intent
+            android:action="com.mhfu.recomp.EXPORT_SAVE"
+            android:targetPackage="com.mhfu.recomp"
+            android:targetClass="com.mhfu.recomp.SetupActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="import_save"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="@string/import_save">
+        <intent
+            android:action="com.mhfu.recomp.IMPORT_SAVE"
+            android:targetPackage="com.mhfu.recomp"
+            android:targetClass="com.mhfu.recomp.SetupActivity" />
+    </shortcut>
+</shortcuts>

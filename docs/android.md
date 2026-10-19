@@ -27,7 +27,10 @@ the game's code: on first start the player picks their ISO, and the game runs fr
   bars at the sides). SDL's activity runs the launcher (`GameActivity`, in a process of its
   own); `SetupActivity` comes first: it unpacks the launcher's fonts and logo, has the player
   choose the ISO (kept for next time), and when the game couldn't start (`launch-problem.txt`) or
-  stopped unexpectedly, says why (the end of `log.txt`). The app is marked as a game
+  stopped unexpectedly, says why (the end of `log.txt`). Saves are in the app's private files
+  (`ms0/PSP/SAVEDATA/ULES01213`); holding the app's icon offers **Export save** and **Import
+  save** (static shortcuts into `SetupActivity`), which copy the game's save file (`MHP2NDG.BIN`)
+  out to, or in from, a file the player picks. The app is marked as a game
   (`android:appCategory`), so the phone's game mode and game booster treat it as one.
 - **Measured on desktop** (one core of the cloud machine, 30 fps): interpreting the whole program,
   the game's thread used about 60% of a core walking through the village (40% translated) and
@@ -68,7 +71,6 @@ the app can't be updated. A local build uses it when given `MHFU_KEYSTORE` (the 
 ## To do
 
 1. More testing on phones: hunts, other GPUs, controllers.
-2. Saves the player can back up (they're in the app's private files).
-3. Touch controls.
-4. Later: if phones are too slow interpreting, an optional
+2. Touch controls.
+3. Later: if phones are too slow interpreting, an optional
    one-time build of the game's code on the phone.

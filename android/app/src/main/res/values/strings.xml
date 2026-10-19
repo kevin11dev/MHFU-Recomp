@@ -8,4 +8,14 @@
     <string name="first_start">To play, choose your own copy of Monster Hunter Freedom Unite: the European release (ULES01213, v1.01), dumped from your UMD as an .iso file.</string>
     <string name="starting">Starting…\n\nThe first start copies the game\'s data from your ISO (about 750 MB), which takes a minute or two.</string>
     <string name="cannot_open">Can\'t open your ISO any more (moved or deleted?). Choose it again.</string>
+    <string name="start">Start</string>
+    <string name="import_save">Import save</string>
+    <string name="export_save">Export save</string>
+    <string name="not_a_save">That isn\'t a save from this game. Choose the MHP2NDG.BIN that Export save made (on this device or another).</string>
+    <string name="replace_save_title">Replace your save?</string>
+    <string name="replace_save">The save you chose replaces your hunter here. To keep them, cancel and use Export save first (hold the app\'s icon).</string>
+    <string name="replace">Replace</string>
+    <string name="save_imported">Save imported.</string>
+    <string name="save_exported">Save exported.</string>
+    <string name="no_save">There\'s no save to export yet: the game makes one the first time it saves.</string>
 </resources>

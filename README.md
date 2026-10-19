@@ -42,7 +42,7 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 | Free right-stick camera in hunting areas | |
 | Optional hold-to-gather quality-of-life feature | |
 | Online ad-hoc multiplayer, including PPSSPP compatibility | |
-| Android app for phones and tablets, played with a controller | Touch controls, and saves you can back up, on Android |
+| Android app for phones and tablets, played with a controller; saves you can export and import | Touch controls on Android |
 
 ## Play
 
@@ -101,7 +101,7 @@ The Android app is on the [Releases](https://github.com/kevin11dev/MHFU-Recomp/r
 2. Open **MHFU Recomp** and choose your ISO. The first start copies the game's data out of it, which takes a minute or two.
 3. The launcher opens; use the controller from there. The game fills the screen: **Widescreen** (in Settings) shows more of the world at the sides instead of black bars.
 
-To update, install the new APK over the old one; your saves stay. Uninstalling the app deletes its saves.
+To update, install the new APK over the old one; your saves stay. Uninstalling the app deletes its saves, so export yours first: hold the app's icon and choose **Export save**, which writes the save (`MHP2NDG.BIN`) wherever you pick. **Import save** puts one back, from this phone or another (or from the Linux build's save folder).
 
 ## Controls
 
