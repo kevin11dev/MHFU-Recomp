@@ -33,7 +33,7 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 | Available now | Still in progress |
 | --- | --- |
 | Booting, menus, character creation, village, quests, saving and loading | A native Windows build |
-| Vulkan and OpenGL ES renderers at 720p or 1080p | PSP-style system save/load dialogs (accepted automatically for now) |
+| Vulkan and OpenGL ES renderers at 720p or 1080p, or the PSP's original resolution | PSP-style system save/load dialogs (accepted automatically for now) |
 | Widescreen: more of the world on screens wider than the PSP's, instead of black bars | |
 | Music, sound effects, and video playback (with FFmpeg) | Further audio testing and polish |
 | 30 fps or an optional true 60 fps mode | The game's downloadable event-quest service |

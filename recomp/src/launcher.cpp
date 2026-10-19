@@ -88,7 +88,7 @@ fs::path executable_directory(const char* argv0) {
 struct Settings {
   std::optional<fs::path> iso;
   int fps = 30;           // 30 (the game's own) or 60 (the community 60 fps code)
-  int resolution = 720;   // 720 or 1080: the window size and how sharply the game is drawn
+  int resolution = 720;   // 272 (the PSP's own), 720 or 1080: how sharply the game is drawn
   bool fullscreen = false;
 #if defined(__ANDROID__)
   std::string graphics = "opengl";  // opengl or vulkan: on phones, OpenGL has run faster
@@ -222,7 +222,7 @@ Settings load_settings(const fs::path& data) {
     const auto value = line.substr(separator + 1U);
     if (key == "iso" && !value.empty()) settings.iso = fs::path(value);
     else if (key == "fps") settings.fps = value == "60" ? 60 : 30;
-    else if (key == "resolution") settings.resolution = value == "1080" ? 1080 : 720;
+    else if (key == "resolution") settings.resolution = value == "1080" ? 1080 : value == "272" ? 272 : 720;
     else if (key == "fullscreen") settings.fullscreen = value == "1";
     else if (key == "fps_counter") settings.fps_counter = value == "1";
     else if (key == "widescreen") settings.widescreen = value == "1";
@@ -557,11 +557,12 @@ int main(int argc, char** argv) {
 
 #if defined(MHFU_HAS_SDL)
   // The launcher, in the window as it was last chosen; then the window and drawing resolution
-  // chosen in it. 720p draws at 3x the PSP's 480x272 (1440x816), 1080p at 4x (1920x1088).
+  // chosen in it. 720p draws at 3x the PSP's 480x272 (1440x816), 1080p at 4x (1920x1088), and
+  // Original at the PSP's own, scaled up to the window (720p's) as the picture always is.
   const auto apply_display = [&] {
     const bool full_hd = settings.resolution == 1080;
-    refract::frontend::set_display_settings(full_hd ? 4U : 3U, full_hd ? 1920 : 1280, full_hd ? 1080 : 720,
-                                            settings.fullscreen);
+    const auto scale = full_hd ? 4U : settings.resolution == 272 ? 1U : 3U;
+    refract::frontend::set_display_settings(scale, full_hd ? 1920 : 1280, full_hd ? 1080 : 720, settings.fullscreen);
   };
   if (!play) {
     apply_display();
@@ -585,8 +586,10 @@ int main(int argc, char** argv) {
         {"Frame rate", {"30 fps (original)", "60 fps"}, settings.fps == 60 ? 1U : 0U, "Display",
          "30 is how the game was made. At 60 the game itself runs 60 times a second, with fixes for what would "
          "otherwise go at double speed. If something moves too fast, go back to 30."},
-        {"Resolution", {"720p", "1080p"}, settings.resolution == 1080 ? 1U : 0U, "Display",
-         "The game is drawn at this resolution (3 or 4 times the PSP's), so it's sharper, not just bigger."},
+        {"Resolution", {"Original", "720p", "1080p"},
+         settings.resolution == 272 ? 0U : settings.resolution == 1080 ? 2U : 1U, "Display",
+         "The game is drawn at this resolution (3 or 4 times the PSP's), so it's sharper, not just bigger. "
+         "Original draws it at the PSP's own 480x272, scaled up, as it looked on a PSP."},
         {"Graphics", vulkan_built ? std::vector<std::string>{"Vulkan", "OpenGL"} : std::vector<std::string>{"OpenGL"},
          vulkan_built && settings.graphics == "opengl" ? 1U : 0U, "Display", graphics_description},
 #if !defined(__ANDROID__)
@@ -645,7 +648,7 @@ int main(int argc, char** argv) {
     choices.push_back(multiplayer);
     if (!refract::frontend::run_launcher(launcher_screen(data, resources, *disc), choices)) return 0;
     settings.fps = choices[frame_rate].selected == 1U ? 60 : 30;
-    settings.resolution = choices[resolution].selected == 1U ? 1080 : 720;
+    settings.resolution = std::array{272, 720, 1080}.at(choices[resolution].selected);
     if (vulkan_built) settings.graphics = choices[graphics].selected == 1U ? "opengl" : "vulkan";
 #if !defined(__ANDROID__)
     settings.fullscreen = choices[display].selected == 1U;
