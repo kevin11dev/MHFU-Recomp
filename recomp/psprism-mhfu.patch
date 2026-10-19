@@ -1919,10 +1919,10 @@ index 0000000..6f5b6e4
 +}  // namespace refract::host::gpu
 diff --git a/refract/src/host/gpu_vulkan.cpp b/refract/src/host/gpu_vulkan.cpp
 new file mode 100644
-index 0000000..9b98cb6
+index 0000000..cb7bec9
 --- /dev/null
 +++ b/refract/src/host/gpu_vulkan.cpp
-@@ -0,0 +1,1872 @@
+@@ -0,0 +1,1948 @@
 +// The Vulkan backend (gpu.hpp): Vulkan 1.0 with VK_KHR_swapchain, loaded through SDL (or, for an
 +// offscreen window, from the system's loader, drawing into an image of its own), drawing as
 +// gpu_gl.cpp does with the same shaders (vulkan_shaders/).
@@ -2613,8 +2613,9 @@ index 0000000..9b98cb6
 +      if (window_format_ == VK_FORMAT_B8G8R8A8_UNORM)  // to RGBA
 +        for (std::size_t index = 0; index + 3U < capture->size(); index += 4U)
 +          std::swap((*capture)[index], (*capture)[index + 2U]);
-+      if (width != nullptr) *width = static_cast<int>(extent.width);
-+      if (height != nullptr) *height = static_cast<int>(extent.height);
++      turn_back(*capture, extent);
++      if (width != nullptr) *width = static_cast<int>(logical_extent_.width);
++      if (height != nullptr) *height = static_cast<int>(logical_extent_.height);
 +      destroy_buffer(readback);
 +    } else if (capture != nullptr) {
 +      capture->clear();
@@ -3465,13 +3466,24 @@ index 0000000..9b98cb6
 +                                 capabilities.maxImageExtent.height);
 +    }
 +    if (extent.width == 0U || extent.height == 0U) return false;  // minimized
-+    // Turned as the screen is (Android): the swapchain keeps the screen's own orientation.
++    // Turned as the screen is (Android): the swapchain keeps the screen's own orientation, and the
++    // window's picture is drawn turned in it. Android gives the window's size as the window is
++    // (landscape on a phone whose screen is portrait): the swapchain's is the other way round.
++    // (Which way the window is, SDL knows, should a device give it the other way.)
 +    auto transform = capabilities.currentTransform;
 +    if (transform != VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR && transform != VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR &&
 +        transform != VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR)
 +      transform = (capabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) != 0U
 +                      ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR
 +                      : capabilities.currentTransform;
++    const bool turned = transform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
++                        transform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
++    VkExtent2D logical = extent;  // as the window is
++    if (turned) {
++      if (made_for_[0] > 0 && made_for_[1] > 0 && (made_for_[0] > made_for_[1]) != (extent.width > extent.height))
++        std::swap(logical.width, logical.height);
++      extent = {logical.height, logical.width};
++    }
 +    std::uint32_t format_count{};
 +    vk_.vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &format_count, nullptr);
 +    std::vector<VkSurfaceFormatKHR> formats(format_count);
@@ -3520,10 +3532,20 @@ index 0000000..9b98cb6
 +    }
 +    swapchain_ = swapchain;
 +    swapchain_extent_ = extent;
++    window_extent_ = extent;
 +    transform_ = transform;
-+    const bool turned = transform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
-+                        transform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
-+    logical_extent_ = turned ? VkExtent2D{extent.height, extent.width} : extent;
++    std::fprintf(stderr, "[refract:vulkan] swapchain %ux%u (surface %ux%u, turned %d), window %dx%d\n", extent.width,
++                 extent.height, capabilities.currentExtent.width, capabilities.currentExtent.height,
++                 transform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR    ? 90
++                 : transform == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR ? 180
++                 : transform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR ? 270
++                                                                         : 0,
++                 made_for_[0], made_for_[1]);
++    // The window as SDL has it, should the swapchain's size not match it: then Android scales the
++    // picture onto the window, and drawing it scaled to the swapchain undoes that.
++    logical_extent_ = made_for_[0] > 0 && made_for_[1] > 0
++                          ? VkExtent2D{static_cast<std::uint32_t>(made_for_[0]), static_cast<std::uint32_t>(made_for_[1])}
++                          : logical;
 +    if (format.format != window_format_ || window_passes_[0] == VK_NULL_HANDLE) {
 +      window_format_ = format.format;
 +      if (!create_window_pipelines()) return false;
@@ -3553,11 +3575,24 @@ index 0000000..9b98cb6
 +    return true;
 +  }
 +
++  // The offscreen window's image. REFRACT_VULKAN_TEST_ROTATION=90, 180 or 270 draws it turned as an
++  // Android screen would be, to test that (screenshots are turned back).
 +  bool ensure_offscreen() {
 +    int width{}, height{};
 +    SDL_GetWindowSize(window_, &width, &height);
-+    const auto w = static_cast<std::uint32_t>(std::max(width, 1));
-+    const auto h = static_cast<std::uint32_t>(std::max(height, 1));
++    logical_extent_ = {static_cast<std::uint32_t>(std::max(width, 1)), static_cast<std::uint32_t>(std::max(height, 1))};
++    const auto* rotation = std::getenv("REFRACT_VULKAN_TEST_ROTATION");
++    const auto degrees = rotation != nullptr ? std::atoi(rotation) : 0;
++    transform_ = degrees == 90    ? VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR
++                 : degrees == 180 ? VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR
++                 : degrees == 270 ? VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR
++                                  : VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
++    const bool turned = degrees == 90 || degrees == 270;
++    auto w = turned ? logical_extent_.height : logical_extent_.width;
++    auto h = turned ? logical_extent_.width : logical_extent_.height;
++    // REFRACT_VULKAN_TEST_IMAGE=WxH: an image of another size, as a phone's swapchain may be.
++    if (const auto* size = std::getenv("REFRACT_VULKAN_TEST_IMAGE")) std::sscanf(size, "%ux%u", &w, &h);
++    window_extent_ = {w, h};
 +    if (offscreen_image_.image != VK_NULL_HANDLE && offscreen_image_.width == w && offscreen_image_.height == h)
 +      return true;
 +    vk_.vkDeviceWaitIdle(device_);
@@ -3632,25 +3667,65 @@ index 0000000..9b98cb6
 +    return false;
 +  }
 +
++  // A captured picture, from the swapchain's orientation (and size) back to the window's.
++  void turn_back(std::vector<std::uint8_t>& pixels, VkExtent2D extent) const {
++    const auto width = logical_extent_.width, height = logical_extent_.height;
++    const bool turned = transform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
++                        transform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
++    const auto turned_width = turned ? height : width, turned_height = turned ? width : height;
++    if (transform_ == VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR && extent.width == width && extent.height == height) return;
++    std::vector<std::uint8_t> turned_pixels(static_cast<std::size_t>(width) * height * 4U);
++    for (std::uint32_t y = 0; y < height; ++y)
++      for (std::uint32_t x = 0; x < width; ++x) {
++        std::uint32_t px = x, py = y;  // where the window's (x, y) is in the swapchain's image
++        if (transform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) px = height - 1U - y, py = x;
++        else if (transform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) px = y, py = width - 1U - x;
++        else if (transform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) px = width - 1U - x, py = height - 1U - y;
++        px = static_cast<std::uint32_t>(static_cast<std::uint64_t>(px) * extent.width / turned_width);
++        py = static_cast<std::uint32_t>(static_cast<std::uint64_t>(py) * extent.height / turned_height);
++        if (px >= extent.width || py >= extent.height) continue;
++        std::memcpy(&turned_pixels[(static_cast<std::size_t>(y) * width + x) * 4U],
++                    &pixels[(static_cast<std::size_t>(py) * extent.width + px) * 4U], 4U);
++      }
++    pixels.swap(turned_pixels);
++  }
++
 +  // The window rectangle in the swapchain's own orientation, and how the picture turns in it.
 +  void window_place(const Rect& where, VkRect2D& placed, float rotation[4]) const {
 +    const auto width = static_cast<int>(logical_extent_.width);
 +    const auto height = static_cast<int>(logical_extent_.height);
 +    placed = {{where.x, where.y}, {static_cast<std::uint32_t>(where.width), static_cast<std::uint32_t>(where.height)}};
 +    float turn[4] = {1.0F, 0.0F, 0.0F, 1.0F};
-+    if (!offscreen_ && transform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
++    if (transform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
 +      placed = {{height - where.y - where.height, where.x},
 +                {static_cast<std::uint32_t>(where.height), static_cast<std::uint32_t>(where.width)}};
 +      turn[0] = 0.0F, turn[1] = -1.0F, turn[2] = 1.0F, turn[3] = 0.0F;
-+    } else if (!offscreen_ && transform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
++    } else if (transform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
 +      placed = {{where.y, width - where.x - where.width},
 +                {static_cast<std::uint32_t>(where.height), static_cast<std::uint32_t>(where.width)}};
 +      turn[0] = 0.0F, turn[1] = 1.0F, turn[2] = -1.0F, turn[3] = 0.0F;
-+    } else if (!offscreen_ && transform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
++    } else if (transform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
 +      placed.offset = {width - where.x - where.width, height - where.y - where.height};
 +      turn[0] = -1.0F, turn[3] = -1.0F;
 +    }
 +    std::copy(std::begin(turn), std::end(turn), rotation);
++    // Scaled to the image, where it isn't the window's size (turned).
++    const bool turned = transform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
++                        transform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
++    const auto turned_width = static_cast<float>(turned ? height : width);
++    const auto turned_height = static_cast<float>(turned ? width : height);
++    if (turned_width > 0.0F && turned_height > 0.0F && window_extent_.width > 0U &&
++        (static_cast<float>(window_extent_.width) != turned_width ||
++         static_cast<float>(window_extent_.height) != turned_height)) {
++      const auto x_scale = static_cast<float>(window_extent_.width) / turned_width;
++      const auto y_scale = static_cast<float>(window_extent_.height) / turned_height;
++      const auto left = std::lround(static_cast<float>(placed.offset.x) * x_scale);
++      const auto top = std::lround(static_cast<float>(placed.offset.y) * y_scale);
++      const auto right = std::lround(static_cast<float>(placed.offset.x + static_cast<int>(placed.extent.width)) * x_scale);
++      const auto bottom = std::lround(static_cast<float>(placed.offset.y + static_cast<int>(placed.extent.height)) * y_scale);
++      placed = {{static_cast<std::int32_t>(left), static_cast<std::int32_t>(top)},
++                {static_cast<std::uint32_t>(std::max(right - left, 1L)), static_cast<std::uint32_t>(std::max(bottom - top, 1L))}};
++    }
 +  }
 +
 +  void draw_window(const Rect& where, VulkanImage& image, float u_scale, float v_scale, VkPipeline pipeline) {
@@ -3742,6 +3817,7 @@ index 0000000..9b98cb6
 +  VkSwapchainKHR swapchain_{};
 +  VkExtent2D swapchain_extent_{};
 +  VkExtent2D logical_extent_{};  // as the window is (turned back)
++  VkExtent2D window_extent_{};   // the image the window is drawn into (swapchain's, or offscreen)
 +  VkSurfaceTransformFlagBitsKHR transform_{VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR};
 +  std::vector<VkImage> swapchain_images_;
 +  std::vector<VkImageView> swapchain_views_;
