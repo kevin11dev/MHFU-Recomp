@@ -90,10 +90,11 @@ struct Settings {
   int fps = 30;           // 30 (the game's own) or 60 (the community 60 fps code)
   int resolution = 720;   // 720 or 1080: the window size and how sharply the game is drawn
   bool fullscreen = false;
-  std::string graphics = "vulkan";  // vulkan (where it works) or opengl
 #if defined(__ANDROID__)
+  std::string graphics = "opengl";  // opengl or vulkan: on phones, OpenGL has run faster
   bool widescreen = true;  // fill a screen wider than the PSP's with more of the game's world
 #else
+  std::string graphics = "vulkan";  // vulkan (where it works) or opengl
   bool widescreen = false;
 #endif
   bool fps_counter = false;  // show the frame rate in a corner
@@ -225,7 +226,7 @@ Settings load_settings(const fs::path& data) {
     else if (key == "fullscreen") settings.fullscreen = value == "1";
     else if (key == "fps_counter") settings.fps_counter = value == "1";
     else if (key == "widescreen") settings.widescreen = value == "1";
-    else if (key == "graphics") settings.graphics = value == "opengl" ? "opengl" : "vulkan";
+    else if (key == "graphics" && (value == "opengl" || value == "vulkan")) settings.graphics = value;
     else if (key == "frame_interpolation") {
       const auto rate = std::atoi(value.c_str());
       if (std::find(interpolation_rates.begin(), interpolation_rates.end(), rate) != interpolation_rates.end())
@@ -567,9 +568,15 @@ int main(int argc, char** argv) {
     using refract::frontend::Choice;
     using refract::frontend::GraphicsApi;
     const bool vulkan_built = refract::frontend::vulkan_built();
+#if defined(__ANDROID__)
+    std::string graphics_description =
+        "How the game is drawn. OpenGL is usually the faster one on phones; Vulkan is newer and may do better on "
+        "yours. If Vulkan can't start, the game uses OpenGL.";
+#else
     std::string graphics_description =
         "How the game is drawn. Vulkan is newer and usually smoother; OpenGL is the older way, for a device "
         "where Vulkan doesn't work well. If Vulkan can't start, the game uses OpenGL.";
+#endif
     if (!vulkan_built)
       graphics_description = "How the game is drawn: OpenGL (this build has no Vulkan).";
     else if (settings.graphics == "vulkan" && refract::frontend::graphics_api() == GraphicsApi::opengl)

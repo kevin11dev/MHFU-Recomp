@@ -18,8 +18,8 @@ the game's code: on first start the player picks their ISO, and the game runs fr
   it into the app's files, as on Linux; the game's raw reads of the disc
   (`disc0:/sce_lbn...`, how it reads `DATA.BIN`) are served from those copies (refract's
   `raw_disc_source`), so after that the ISO isn't read again.
-- **The rest is the desktop port:** refract, the SDL2 host (drawing with Vulkan, or OpenGL ES where
-  Vulkan doesn't work: the launcher's Graphics setting), the launcher, the camera,
+- **The rest is the desktop port:** refract, the SDL2 host (drawing with OpenGL ES, which has run faster on
+  phones than Vulkan, or Vulkan: the launcher's Graphics setting), the launcher, the camera,
   60 fps, features and multiplayer, built for arm64-v8a with the NDK, and FFmpeg's H.264 decoder
   for the videos. Always the whole screen (Android's bars hidden), landscape either way round,
   with widescreen on by default (the launcher's Widescreen setting: refract's host draws the
@@ -27,7 +27,8 @@ the game's code: on first start the player picks their ISO, and the game runs fr
   bars at the sides). SDL's activity runs the launcher (`GameActivity`, in a process of its
   own); `SetupActivity` comes first: it unpacks the launcher's fonts and logo, has the player
   choose the ISO (kept for next time), and when the game couldn't start (`launch-problem.txt`) or
-  stopped unexpectedly, says why (the end of `log.txt`).
+  stopped unexpectedly, says why (the end of `log.txt`). The app is marked as a game
+  (`android:appCategory`), so the phone's game mode and game booster treat it as one.
 - **Measured on desktop** (one core of the cloud machine, 30 fps): interpreting the whole program,
   the game's thread used about 60% of a core walking through the village (40% translated) and
   57% standing in a dialog (28% translated), and held 26–30 frames a second.
