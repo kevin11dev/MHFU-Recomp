@@ -18,7 +18,8 @@ the game's code: on first start the player picks their ISO, and the game runs fr
   it into the app's files, as on Linux; the game's raw reads of the disc
   (`disc0:/sce_lbn...`, how it reads `DATA.BIN`) are served from those copies (refract's
   `raw_disc_source`), so after that the ISO isn't read again.
-- **The rest is the desktop port:** refract, the SDL2 + OpenGL ES host, the launcher, the camera,
+- **The rest is the desktop port:** refract, the SDL2 host (drawing with Vulkan, or OpenGL ES where
+  Vulkan doesn't work: the launcher's Graphics setting), the launcher, the camera,
   60 fps, features and multiplayer, built for arm64-v8a with the NDK, and FFmpeg's H.264 decoder
   for the videos. Always the whole screen (Android's bars hidden), landscape either way round,
   with widescreen on by default (the launcher's Widescreen setting: refract's host draws the
@@ -68,5 +69,5 @@ the app can't be updated. A local build uses it when given `MHFU_KEYSTORE` (the 
 1. More testing on phones: hunts, other GPUs, controllers.
 2. Saves the player can back up (they're in the app's private files).
 3. Touch controls.
-4. Later: a Vulkan renderer as a graphics option; if phones are too slow interpreting, an optional
+4. Later: if phones are too slow interpreting, an optional
    one-time build of the game's code on the phone.

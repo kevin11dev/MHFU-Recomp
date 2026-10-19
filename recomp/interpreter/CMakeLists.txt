@@ -83,6 +83,8 @@ target_sources(${GAME} PRIVATE
   ${REFRACT}/src/host/common.cpp
   ${REFRACT}/src/stubs/mpeg/media_engine.cpp
   ${REFRACT}/src/host/sdl_gles.cpp
+  ${REFRACT}/src/host/gpu_gl.cpp
+  ${REFRACT}/src/host/gpu_vulkan.cpp
   ${AEMU}/client/delay_impl_cpp.cpp
   ${AEMU}/client/mutex_impl_cpp.cpp
   ${AT3_SOURCES}
@@ -95,6 +97,19 @@ target_include_directories(${GAME} PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/glue ${PSPRISM_DIR}/include ${REFRACT}/include ${REFRACT}/include/pspsdk
   ${REFRACT}/src ${REFRACT}/third_party/at3_standalone ${CONFIG})
 target_compile_definitions(${GAME} PRIVATE MHFU_HAS_SDL)
+# Vulkan (refract's Vulkan backend, the default where the device has it): its headers are all it
+# needs, as SDL loads Vulkan. The NDK has them; on Linux, the Vulkan development package.
+include(CheckIncludeFileCXX)
+if(ANDROID)
+  set(HAVE_VULKAN_HEADERS ON)
+else()
+  check_include_file_cxx(vulkan/vulkan.h HAVE_VULKAN_HEADERS)
+endif()
+if(HAVE_VULKAN_HEADERS)
+  target_compile_definitions(${GAME} PRIVATE REFRACT_HAS_VULKAN=1)
+else()
+  message(STATUS "Vulkan headers not found: OpenGL ES only")
+endif()
 # Always optimized: the interpreter runs the whole game.
 target_compile_options(${GAME} PRIVATE -O2 -w)
 
@@ -110,4 +125,4 @@ target_compile_options(aemu PRIVATE -O2 -w)
 set_target_properties(aemu PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 find_package(Threads REQUIRED)
-target_link_libraries(${GAME} PRIVATE aemu Threads::Threads)
+target_link_libraries(${GAME} PRIVATE aemu Threads::Threads ${CMAKE_DL_LIBS})

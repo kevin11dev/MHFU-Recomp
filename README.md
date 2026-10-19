@@ -33,7 +33,7 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 | Available now | Still in progress |
 | --- | --- |
 | Booting, menus, character creation, village, quests, saving and loading | A native Windows build |
-| Native SDL2 + OpenGL ES renderer at 720p or 1080p | PSP-style system save/load dialogs (accepted automatically for now) |
+| Native Vulkan renderer (OpenGL ES where Vulkan isn't available) at 720p or 1080p | PSP-style system save/load dialogs (accepted automatically for now) |
 | Widescreen: more of the world on screens wider than the PSP's, instead of black bars | |
 | Music, sound effects, and video playback (with FFmpeg) | Further audio testing and polish |
 | 30 fps or an optional true 60 fps mode | The game's downloadable event-quest service |
@@ -56,7 +56,7 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 - Disk space for the build and a copy of the game's data (about 750 MB)
 - An internet connection on first run, to install build packages and fetch the recompiler
 
-`play.sh` installs missing build packages with apt, pacman, dnf, or zypper, after asking for your password. It needs a C++ compiler (g++ 13 or newer), SDL2, OpenGL ES headers, Python 3, the Liberation fonts, and FFmpeg for video playback (optional: without it, the videos are skipped).
+`play.sh` installs missing build packages with apt, pacman, dnf, or zypper, after asking for your password. It needs a C++ compiler (g++ 13 or newer), SDL2, OpenGL ES headers, Python 3, the Liberation fonts, the Vulkan headers (optional: without them, the game draws with OpenGL ES), and FFmpeg for video playback (optional: without it, the videos are skipped).
 
 ```sh
 git clone https://github.com/kevin11dev/MHFU-Recomp.git
@@ -116,7 +116,7 @@ To update, install the new APK over the old one; your saves stay. Uninstalling t
 
 On Android, play with a controller (the last column). As on the PSP, tapping L turns the camera to face where your hunter faces, and holding it opens the item bar.
 
-The launcher contains the full controls screen and settings for display mode, resolution, widescreen, frame rate, interpolation, the right-stick camera, hold-to-gather, and multiplayer. Each optional feature is off until you turn it on (except widescreen, which is on by default on Android), so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
+The launcher contains the full controls screen and settings for display mode, resolution, graphics (Vulkan or OpenGL), widescreen, frame rate, interpolation, the right-stick camera, hold-to-gather, and multiplayer. Each optional feature is off until you turn it on (except widescreen, which is on by default on Android), so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
 
 ## Multiplayer
 
@@ -133,7 +133,7 @@ The service is community-run, so availability can change. If no server answers, 
 
 MHFU Recomp builds on [psprism](https://github.com/anthonyhfm/psprism), a PSP static recompilation framework. It translates the game's Allegrex CPU code into C++, compiles that code locally, and supplies a native PSP runtime for threads, disc I/O, graphics, audio, fonts, save data, video, input, and networking.
 
-This repository adds the MHFU-specific pieces: fixes to the translator, the title's code map, an SDL2/OpenGL ES host for Linux and Android, the Android app, a launcher, font and timer support, video and audio fixes, online ad-hoc networking, an enhanced camera, and optional gameplay features. The build takes the game's program from the ISO you provide, checks it against the version this project is made for, and the game reads its data from your copy as it runs; none of it is fetched by the build system.
+This repository adds the MHFU-specific pieces: fixes to the translator, the title's code map, an SDL2 host for Linux and Android that draws with Vulkan or OpenGL ES, the Android app, a launcher, font and timer support, video and audio fixes, online ad-hoc networking, an enhanced camera, and optional gameplay features. The build takes the game's program from the ISO you provide, checks it against the version this project is made for, and the game reads its data from your copy as it runs; none of it is fetched by the build system.
 
 Technical notes are in [recomp/README.md](recomp/README.md), and the reverse-engineering workflow is documented in [docs/decompilation.md](docs/decompilation.md).
 

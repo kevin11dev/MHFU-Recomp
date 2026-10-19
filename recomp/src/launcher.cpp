@@ -90,6 +90,7 @@ struct Settings {
   int fps = 30;           // 30 (the game's own) or 60 (the community 60 fps code)
   int resolution = 720;   // 720 or 1080: the window size and how sharply the game is drawn
   bool fullscreen = false;
+  std::string graphics = "vulkan";  // vulkan (where it works) or opengl
 #if defined(__ANDROID__)
   bool widescreen = true;  // fill a screen wider than the PSP's with more of the game's world
 #else
@@ -224,6 +225,7 @@ Settings load_settings(const fs::path& data) {
     else if (key == "fullscreen") settings.fullscreen = value == "1";
     else if (key == "fps_counter") settings.fps_counter = value == "1";
     else if (key == "widescreen") settings.widescreen = value == "1";
+    else if (key == "graphics") settings.graphics = value == "opengl" ? "opengl" : "vulkan";
     else if (key == "frame_interpolation") {
       const auto rate = std::atoi(value.c_str());
       if (std::find(interpolation_rates.begin(), interpolation_rates.end(), rate) != interpolation_rates.end())
@@ -254,6 +256,7 @@ void save_settings(const fs::path& data, const Settings& settings) {
   if (settings.iso) config << "iso=" << settings.iso->string() << '\n';
   config << "fps=" << settings.fps << "\nresolution=" << settings.resolution
          << "\nfullscreen=" << (settings.fullscreen ? 1 : 0)
+         << "\ngraphics=" << settings.graphics
          << "\nwidescreen=" << (settings.widescreen ? 1 : 0)
          << "\nfps_counter=" << (settings.fps_counter ? 1 : 0)
          << "\nframe_interpolation=" << settings.frame_interpolation
@@ -519,6 +522,13 @@ int main(int argc, char** argv) {
   setenv("REFRACT_WRITABLE_ROOT", (data / "ms0").c_str(), 0);
   setenv("REFRACT_FONT_DIR", (resources / "fonts").c_str(), 0);
   fs::create_directories(data / "ms0");
+#if defined(MHFU_HAS_SDL)
+  // How the game is drawn, before the window opens; and where Vulkan keeps the pipelines it made,
+  // so they're ready next time.
+  refract::frontend::set_graphics_api(settings.graphics == "opengl" ? refract::frontend::GraphicsApi::opengl
+                                                                    : refract::frontend::GraphicsApi::vulkan);
+  refract::frontend::set_pipeline_cache((data / "vulkan-pipelines.bin").string());
+#endif
 
   bool verbose = false;
   if (const auto* setting = std::getenv("REFRACT_VERBOSE")) verbose = std::strcmp(setting, "0") != 0;
@@ -555,12 +565,23 @@ int main(int argc, char** argv) {
   if (!play) {
     apply_display();
     using refract::frontend::Choice;
+    using refract::frontend::GraphicsApi;
+    const bool vulkan_built = refract::frontend::vulkan_built();
+    std::string graphics_description =
+        "How the game is drawn. Vulkan is newer and usually smoother; OpenGL is the older way, for a device "
+        "where Vulkan doesn't work well. If Vulkan can't start, the game uses OpenGL.";
+    if (!vulkan_built)
+      graphics_description = "How the game is drawn: OpenGL (this build has no Vulkan).";
+    else if (settings.graphics == "vulkan" && refract::frontend::graphics_api() == GraphicsApi::opengl)
+      graphics_description += " Here, Vulkan couldn't start, so it's OpenGL.";
     std::vector<Choice> choices = {
         {"Frame rate", {"30 fps (original)", "60 fps"}, settings.fps == 60 ? 1U : 0U, "Display",
          "30 is how the game was made. At 60 the game itself runs 60 times a second, with fixes for what would "
          "otherwise go at double speed. If something moves too fast, go back to 30."},
         {"Resolution", {"720p", "1080p"}, settings.resolution == 1080 ? 1U : 0U, "Display",
          "The game is drawn at this resolution (3 or 4 times the PSP's), so it's sharper, not just bigger."},
+        {"Graphics", vulkan_built ? std::vector<std::string>{"Vulkan", "OpenGL"} : std::vector<std::string>{"OpenGL"},
+         vulkan_built && settings.graphics == "opengl" ? 1U : 0U, "Display", graphics_description},
 #if !defined(__ANDROID__)
         {"Display", {"Window", "Fullscreen"}, settings.fullscreen ? 1U : 0U, "Display",
          "In a window, or on the whole screen."},
@@ -588,11 +609,11 @@ int main(int argc, char** argv) {
          "it, faster the further you push it. Off keeps the game's original camera."},
     };
 #if defined(__ANDROID__)
-    constexpr std::size_t frame_rate = 0, resolution = 1, widescreen = 2, interpolation = 3, fps_counter = 4,
-                          camera = 5;
-#else
-    constexpr std::size_t frame_rate = 0, resolution = 1, display = 2, widescreen = 3, interpolation = 4,
+    constexpr std::size_t frame_rate = 0, resolution = 1, graphics = 2, widescreen = 3, interpolation = 4,
                           fps_counter = 5, camera = 6;
+#else
+    constexpr std::size_t frame_rate = 0, resolution = 1, graphics = 2, display = 3, widescreen = 4,
+                          interpolation = 5, fps_counter = 6, camera = 7;
 #endif
     const auto choosable = features_by_name();
     const auto first_feature = choices.size();
@@ -618,6 +639,7 @@ int main(int argc, char** argv) {
     if (!refract::frontend::run_launcher(launcher_screen(data, resources, *disc), choices)) return 0;
     settings.fps = choices[frame_rate].selected == 1U ? 60 : 30;
     settings.resolution = choices[resolution].selected == 1U ? 1080 : 720;
+    if (vulkan_built) settings.graphics = choices[graphics].selected == 1U ? "opengl" : "vulkan";
 #if !defined(__ANDROID__)
     settings.fullscreen = choices[display].selected == 1U;
 #endif
@@ -630,6 +652,9 @@ int main(int argc, char** argv) {
       settings.features[choosable[index]->key] = choices[first_feature + index].selected == 1U;
     save_settings(data, settings);
   }
+  // A new choice of graphics starts over in a new window, which apply_display then sizes.
+  refract::frontend::set_graphics_api(settings.graphics == "opengl" ? refract::frontend::GraphicsApi::opengl
+                                                                    : refract::frontend::GraphicsApi::vulkan);
   apply_display();
   refract::frontend::set_widescreen(settings.widescreen);
   refract::frontend::set_fps_counter(settings.fps_counter);

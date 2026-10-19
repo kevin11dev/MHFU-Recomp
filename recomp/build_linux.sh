@@ -6,8 +6,9 @@
 #   WORK_DIR     where generated code, objects and the executable go
 #   PROGRAM      the game's program, from the player's own disc (PSP_GAME/SYSDIR/BOOT.BIN; play.sh
 #                gets it with find_game --program)
-# HOST=sdl (default) builds the SDL2 + OpenGL ES host (needs libsdl2-dev, libgles-dev);
-# HOST=headless builds the host without a window.
+# HOST=sdl (default) builds the SDL2 host, drawing with Vulkan or OpenGL ES (needs libsdl2-dev,
+# libgles-dev, and for Vulkan its headers, libvulkan-dev); HOST=headless builds the host without
+# a window.
 # Set TRACE=1 to add the jump trace from add_trace.py to the dispatcher.
 set -eu
 PSPRISM=$(cd "$1" && pwd)
@@ -19,10 +20,21 @@ OBJ=$WORK/obj
 JOBS=$(nproc)
 HOST=${HOST:-sdl}
 case $HOST in
-	sdl) HOST_SOURCE=host/sdl_gles.cpp; HOST_CFLAGS="$(sdl2-config --cflags) -DMHFU_HAS_SDL"; HOST_LIBS="$(sdl2-config --libs) -lGLESv2" ;;
+	sdl) HOST_SOURCE="host/sdl_gles.cpp host/gpu_gl.cpp host/gpu_vulkan.cpp"
+	     HOST_CFLAGS="$(sdl2-config --cflags) -DMHFU_HAS_SDL"; HOST_LIBS="$(sdl2-config --libs) -lGLESv2 -ldl" ;;
 	headless) HOST_SOURCE=host/linux_headless.cpp; HOST_CFLAGS=; HOST_LIBS= ;;
 	*) echo "unknown HOST=$HOST" >&2; exit 1 ;;
 esac
+
+# Vulkan draws the game where the graphics driver has it: its headers are all the build needs
+# (SDL loads Vulkan). Without them, OpenGL ES draws it.
+if [ "$HOST" = sdl ]; then
+	if echo '#include <vulkan/vulkan.h>' | g++ -E -x c++ - >/dev/null 2>&1; then
+		HOST_CFLAGS="$HOST_CFLAGS -DREFRACT_HAS_VULKAN=1"
+	else
+		echo "Vulkan headers not found: the game will draw with OpenGL ES" >&2
+	fi
+fi
 
 # FFmpeg decodes the game's videos (H.264). Without it they play black, with sound.
 FFMPEG_CFLAGS=
