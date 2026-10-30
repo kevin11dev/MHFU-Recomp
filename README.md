@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  Linux &middot; Android &middot; EU release (<code>ULES01213</code> v1.01) &middot; <a href="https://github.com/kevin11dev/MHFU-Recomp/releases/latest">Version 1.1</a>
+  Linux &middot; Android &middot; EU release (<code>ULES01213</code> v1.01) &middot; <a href="https://github.com/kevin11dev/MHFU-Recomp/releases/latest">Version 1.0</a>
 </p>
 
 # Monster Hunter Freedom Unite Recompiled
 
 MHFU Recomp translates the PSP executable for **Monster Hunter Freedom Unite** into C++ on your own machine, then runs it with native implementations of the PSP services the game needs. It is not a conventional emulator: the game code is compiled ahead of time for your computer, while an interpreter remains available only as a fallback for code that has not been translated. On Android, which has no compiler to build it with, the app runs the game's code in that interpreter instead.
 
-**Version 1.1** runs on Linux (and Windows through WSL) and on Android phones and tablets. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. It is still young, so expect rough edges while development continues.
+**Version 1.0** runs on Linux (and Windows through WSL) and on Android phones and tablets. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. It is still young, so expect rough edges while development continues.
 
 > **You need your own legally obtained European copy of Monster Hunter Freedom Unite** — release `ULES01213`, version 1.01 — dumped from your UMD as an ISO. Other regions and revisions are not supported yet, and neither are compressed images (`.cso`, `.chd`): use a plain `.iso`.
 
