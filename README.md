@@ -7,14 +7,14 @@
 </p>
 
 <p align="center">
-  Linux &middot; Android &middot; EU release (<code>ULES01213</code> v1.01) &middot; <a href="https://github.com/kevin11dev/MHFU-Recomp/releases/latest">Version 1.0</a>
+  Linux &middot; Android &middot; EU release (<code>ULES01213</code> v1.01) &middot; <a href="https://github.com/kevin11dev/MHFU-Recomp/releases/latest">Version 1.1</a>
 </p>
 
 # Monster Hunter Freedom Unite Recompiled
 
 MHFU Recomp translates the PSP executable for **Monster Hunter Freedom Unite** into C++ on your own machine, then runs it with native implementations of the PSP services the game needs. It is not a conventional emulator: the game code is compiled ahead of time for your computer, while an interpreter remains available only as a fallback for code that has not been translated. On Android, which has no compiler to build it with, the app runs the game's code in that interpreter instead.
 
-**Version 1.0** runs on Linux (and Windows through WSL) and on Android phones and tablets. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. It is still young, so expect rough edges while development continues.
+**Version 1.1** runs on Linux (and Windows through WSL) and on Android phones and tablets. It can boot, create a hunter, play the opening, enter the village, run quests, save progress, and play online with compatible PPSSPP players. It is still young, so expect rough edges while development continues.
 
 > **You need your own legally obtained European copy of Monster Hunter Freedom Unite** — release `ULES01213`, version 1.01 — dumped from your UMD as an ISO. Other regions and revisions are not supported yet, and neither are compressed images (`.cso`, `.chd`): use a plain `.iso`.
 
@@ -46,27 +46,55 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 
 ## Play
 
-- **Linux, SteamOS, and Windows (WSL):** `play.sh` builds the game from your ISO on your own machine; see below.
+- **Linux, SteamOS, and Windows (WSL):** one command builds the game from your ISO on your own PC and starts it; see [Linux](#linux).
 - **Android:** download the APK from the [latest release](https://github.com/kevin11dev/MHFU-Recomp/releases/latest); no computer needed. See [Android](#android).
 
 ### Linux
 
-- A Linux PC, or Windows through WSL
-- Your own MHFU EU (`ULES01213` v1.01) ISO
-- Disk space for the build and a copy of the game's data (about 750 MB)
-- An internet connection on first run, to install build packages and fetch the recompiler
+There's no download for Linux: the translated game can't be shared, so `play.sh` builds it on your PC from your own ISO. That's one command, and only the first start takes a while (a few minutes); after that, the game starts straight away.
 
-`play.sh` installs missing build packages with apt, pacman, dnf, or zypper, after asking for your password. It needs a C++ compiler (g++ 13 or newer), SDL2, OpenGL ES headers, Python 3, the Liberation fonts, the Vulkan headers (optional: without them, the game draws with OpenGL ES), and FFmpeg for video playback (optional: without it, the videos are skipped).
+**You need:**
+
+- A 64-bit Linux PC with a recent distribution: Ubuntu 24.04 or newer (or Linux Mint 22, Pop!_OS 24.04), Debian 13, Fedora 39 or newer, Arch, or openSUSE Tumbleweed. Older ones (Ubuntu 22.04, Debian 12) have too old a compiler: use a distrobox, as for [SteamOS](#steamos-bazzite-and-windows). Windows works through WSL.
+- Your own MHFU EU (`ULES01213` v1.01) ISO, as a plain `.iso`
+- About 1.5 GB of free disk space: the build, and a copy of the game's data
+- An internet connection the first time
+
+**The first time:**
+
+1. Open a terminal (search your apps for "Terminal").
+2. Download the project and start it:
+
+   ```sh
+   git clone https://github.com/kevin11dev/MHFU-Recomp.git
+   cd MHFU-Recomp
+   ./play.sh
+   ```
+
+   If `git` isn't installed: `sudo apt install git` (Ubuntu, Debian, Mint), `sudo dnf install git` (Fedora), `sudo pacman -S git` (Arch), or `sudo zypper install git` (openSUSE).
+3. If build tools are missing, `play.sh` says which and installs them; type your password when it asks.
+4. It looks for your ISO where games usually are: `Downloads`, `roms`, `Games`, `Emulation`, PPSSPP's folders, and memory cards. If it doesn't find it, a window asks for the folder it's in.
+5. It builds the game, which takes a few minutes, and then the launcher opens: choose **Play**. Settings (resolution, widescreen, graphics, camera, multiplayer) are in the launcher too.
+
+**After that,** start the game the same way: open a terminal and run
 
 ```sh
-git clone https://github.com/kevin11dev/MHFU-Recomp.git
 cd MHFU-Recomp
 ./play.sh
 ```
 
-On first launch, `play.sh` finds your ISO or lets you choose its folder, downloads and builds the recompiler, translates the game executable from your ISO, copies the game's data into `~/.local/share/mhfu-recomp`, and starts MHFU. This takes a few minutes. Later launches reuse that build and rebuild only when the project changes.
+**To update** to a new version, get it and start as usual; `play.sh` rebuilds what changed, and your saves and settings stay:
 
-To find your ISO, it looks where emulators keep games: PPSSPP's recent games and the folder it showed last, and `roms`, `Games`, `Emulation` (EmuDeck), `retrodeck`, and `Downloads` folders in your home folder or on a memory card. If it isn't there, it asks for the folder, using `zenity` or `kdialog` (or the terminal without either), and searches that folder and the folders in it. It recognizes the game by what's on the disc, not the file name, and tells you what it found if your copy doesn't match (another region, a modified copy, a compressed image).
+```sh
+cd MHFU-Recomp
+git pull
+./play.sh
+```
+
+**Where things are:** saves are in `~/.local/share/mhfu-recomp/ms0/PSP/SAVEDATA/ULES01213` (copy `MHP2NDG.BIN` to move a hunter to or from the Android app), and the launcher's settings in `~/.local/share/mhfu-recomp/config.txt`. If the build fails, `play.sh` shows the last lines of the log; the whole log is `build/build.log` in the `MHFU-Recomp` folder, which is worth including when you report a problem.
+
+<details>
+<summary>More about <code>play.sh</code></summary>
 
 | Command | What it does |
 | --- | --- |
@@ -76,7 +104,13 @@ To find your ISO, it looks where emulators keep games: PPSSPP's recent games and
 | `./play.sh /path/to/roms` | Search a ROM folder for the supported ISO |
 | `./play.sh --choose-iso` | Choose the ISO folder again |
 
-Saves live in the game data directory at `~/.local/share/mhfu-recomp/ms0`, and the launcher's settings in `config.txt` next to it.
+It installs missing packages with apt, pacman, dnf, or zypper: a C++ compiler (g++ 13 or newer), SDL2, the OpenGL ES headers, Python 3 and the Liberation fonts, and if they're available the Vulkan headers (without them, the game draws with OpenGL ES) and FFmpeg (without it, the game's videos are skipped).
+
+To find your ISO, it looks at PPSSPP's recent games and the folder it showed last, and `roms`, `Games`, `Emulation` (EmuDeck), `retrodeck`, and `Downloads` folders in your home folder or on a memory card. Otherwise it asks for the folder, with `zenity` or `kdialog` (or in the terminal without either), and searches that folder and the folders in it. It recognizes the game by what's on the disc, not the file name, and tells you what it found if your copy doesn't match (another region, a modified copy, a compressed image).
+
+The first start downloads and builds the recompiler, translates the game's program from your ISO, and copies the game's data into `~/.local/share/mhfu-recomp`. Everything it builds goes in `build/` in the `MHFU-Recomp` folder.
+
+</details>
 
 ### SteamOS, Bazzite, and Windows
 
