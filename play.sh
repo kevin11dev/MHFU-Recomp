@@ -34,6 +34,12 @@ missing_tools() {
 	[ -n "$missing" ]
 }
 
+# Vulkan draws the game (where the graphics driver has it). Optional: without its headers, the
+# build draws with OpenGL ES.
+has_vulkan() {
+	echo '#include <vulkan/vulkan.h>' | g++ -E -x c++ - >/dev/null 2>&1
+}
+
 # FFmpeg plays the game's videos. Optional: without it they're black, with sound.
 has_ffmpeg() {
 	pkg-config --exists libavcodec libavformat libavutil libswscale 2>/dev/null
@@ -45,9 +51,12 @@ if [ "$(uname -s)" != Linux ]; then
 fi
 
 FFMPEG_MARKER=$BUILD/.ffmpeg-install-tried
-if missing_tools || { ! has_ffmpeg && [ ! -e "$FFMPEG_MARKER" ]; }; then
+VULKAN_MARKER=$BUILD/.vulkan-install-tried
+if missing_tools || { ! has_ffmpeg && [ ! -e "$FFMPEG_MARKER" ]; } ||
+	{ ! has_vulkan && [ ! -e "$VULKAN_MARKER" ]; }; then
 	missing_tools && echo "Missing:$missing"
 	has_ffmpeg || echo "Missing: FFmpeg (for the game's videos)"
+	has_vulkan || echo "Missing: the Vulkan headers (to draw with Vulkan)"
 	. /etc/os-release 2>/dev/null || true
 	if [ -e /run/ostree-booted ] || [ "${ID:-}" = steamos ]; then
 		echo "This system can't install build tools directly. Build inside a distrobox instead:" >&2
@@ -62,22 +71,27 @@ if missing_tools || { ! has_ffmpeg && [ ! -e "$FFMPEG_MARKER" ]; }; then
 		$SUDO apt-get update
 		$SUDO apt-get install -y git make g++ python3 pkg-config libsdl2-dev libgles-dev fonts-liberation zenity
 		$SUDO apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswscale-dev || true
+		$SUDO apt-get install -y libvulkan-dev mesa-vulkan-drivers || true
 	elif command -v pacman >/dev/null 2>&1; then
 		$SUDO pacman -S --needed --noconfirm git make gcc python pkgconf sdl2 mesa ttf-liberation zenity
 		$SUDO pacman -S --needed --noconfirm ffmpeg || true
+		$SUDO pacman -S --needed --noconfirm vulkan-headers vulkan-icd-loader || true
 	elif command -v dnf >/dev/null 2>&1; then
 		$SUDO dnf install -y git make gcc-c++ python3 pkgconf-pkg-config SDL2-devel libglvnd-devel \
 			liberation-sans-fonts liberation-serif-fonts zenity
 		$SUDO dnf install -y 'pkgconfig(libavcodec)' 'pkgconfig(libavformat)' 'pkgconfig(libavutil)' \
 			'pkgconfig(libswscale)' || true
+		$SUDO dnf install -y vulkan-headers vulkan-loader || true
 	elif command -v zypper >/dev/null 2>&1; then
 		$SUDO zypper --non-interactive install git make gcc-c++ python3 pkg-config SDL2-devel \
 			Mesa-libGLESv3-devel Mesa-libGLESv2-devel liberation-fonts zenity
 		$SUDO zypper --non-interactive install 'pkgconfig(libavcodec)' 'pkgconfig(libavformat)' \
 			'pkgconfig(libavutil)' 'pkgconfig(libswscale)' || true
+		$SUDO zypper --non-interactive install vulkan-headers libvulkan1 || true
 	else
 		echo "Install g++, make, git, python3, pkg-config, the SDL2 and OpenGL ES development files," >&2
-		echo "the Liberation fonts and (for videos) FFmpeg with your package manager, then run this again." >&2
+		echo "the Liberation fonts and (for videos) FFmpeg and (for Vulkan) the Vulkan headers with your" >&2
+		echo "package manager, then run this again." >&2
 		exit 1
 	fi
 	if missing_tools; then
@@ -90,6 +104,12 @@ if missing_tools || { ! has_ffmpeg && [ ! -e "$FFMPEG_MARKER" ]; }; then
 	else
 		echo "FFmpeg isn't available here: the game works, but its videos will be black."
 		: >"$FFMPEG_MARKER"  # don't ask again on every start
+	fi
+	if has_vulkan; then
+		rm -f "$GAME/bin/mhfu"  # rebuild with Vulkan
+	else
+		echo "The Vulkan headers aren't available here: the game draws with OpenGL ES."
+		: >"$VULKAN_MARKER"
 	fi
 fi
 

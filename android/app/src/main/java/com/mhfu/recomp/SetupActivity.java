@@ -1,6 +1,7 @@
 package com.mhfu.recomp;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.UriPermission;
@@ -29,9 +30,18 @@ import java.nio.file.Files;
 // When something stopped the game starting (the launcher writes launch-problem.txt: the wrong
 // ISO, say), it says why and offers to choose another; when the game stopped unexpectedly, it
 // shows the end of the game's log (log.txt) and offers to start again.
+//
+// Holding the app's icon offers two shortcuts that come here too: Export save writes the game's
+// save (MHP2NDG.BIN) to a file the player chooses, and Import save replaces it with one they
+// choose, to move a hunter between devices or keep a copy.
 public class SetupActivity extends Activity {
     private static final int CHOOSE_ISO = 1;
     private static final int GAME = 2;
+    private static final int IMPORT_SAVE = 3;
+    private static final int EXPORT_SAVE = 4;
+    private static final String ACTION_IMPORT_SAVE = "com.mhfu.recomp.IMPORT_SAVE";
+    private static final String ACTION_EXPORT_SAVE = "com.mhfu.recomp.EXPORT_SAVE";
+    private static final int SAVE_SIZE = 0x16a100;  // what the game writes, always
 
     private SharedPreferences preferences;
     private TextView message;
@@ -45,6 +55,13 @@ public class SetupActivity extends Activity {
         unpackResources();
         buildScreen();
         if (saved != null) return;
+        String action = getIntent().getAction();
+        if (ACTION_IMPORT_SAVE.equals(action)) chooseSave();
+        else if (ACTION_EXPORT_SAVE.equals(action)) exportSave();
+        else start();
+    }
+
+    private void start() {
         String iso = preferences.getString("iso", null);
         if (iso != null && canRead(Uri.parse(iso))) startGame(Uri.parse(iso));
         else showChoice(getString(iso == null ? R.string.first_start : R.string.cannot_open));
@@ -59,6 +76,12 @@ public class SetupActivity extends Activity {
             getContentResolver().takePersistableUriPermission(iso, Intent.FLAG_GRANT_READ_URI_PERMISSION);
             preferences.edit().putString("iso", iso.toString()).apply();
             startGame(iso);
+        } else if (request == IMPORT_SAVE) {
+            if (result == RESULT_OK && data != null && data.getData() != null) confirmImport(data.getData());
+            else finish();
+        } else if (request == EXPORT_SAVE) {
+            if (result == RESULT_OK && data != null && data.getData() != null) writeSave(data.getData());
+            else finish();
         } else if (request == GAME) {
             File problem = new File(getFilesDir(), "launch-problem.txt");
             if (!problem.exists()) {
@@ -115,7 +138,7 @@ public class SetupActivity extends Activity {
 
         again = new Button(this);
         again.setText(R.string.start_again);
-        again.setOnClickListener(view -> startGame(Uri.parse(preferences.getString("iso", ""))));
+        again.setOnClickListener(view -> start());
         again.setVisibility(View.GONE);
         screen.addView(again, new LinearLayout.LayoutParams(dp(220), LinearLayout.LayoutParams.WRAP_CONTENT));
 
@@ -150,8 +173,87 @@ public class SetupActivity extends Activity {
         }
         message.setText(text);
         message.setTextSize(12);
+        again.setText(R.string.start_again);
         again.setVisibility(View.VISIBLE);
         choose.setVisibility(View.VISIBLE);
+        again.requestFocus();
+    }
+
+    private File saveFile() {
+        return new File(getFilesDir(), "ms0/PSP/SAVEDATA/ULES01213/MHP2NDG.BIN");
+    }
+
+    private void chooseSave() {
+        Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        pick.addCategory(Intent.CATEGORY_OPENABLE);
+        pick.setType("*/*");
+        startActivityForResult(pick, IMPORT_SAVE);
+    }
+
+    private void confirmImport(Uri source) {
+        byte[] save = new byte[SAVE_SIZE];
+        int length = 0;
+        try (InputStream in = getContentResolver().openInputStream(source)) {
+            for (int read; length < SAVE_SIZE && (read = in.read(save, length, SAVE_SIZE - length)) > 0;) length += read;
+            if (length == SAVE_SIZE && in.read() != -1) length = -1;
+        } catch (IOException | NullPointerException e) {
+            length = -1;
+        }
+        if (length != SAVE_SIZE) {
+            showSaveResult(getString(R.string.not_a_save));
+            return;
+        }
+        if (!saveFile().exists()) {
+            importSave(save);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.replace_save_title)
+                .setMessage(R.string.replace_save)
+                .setPositiveButton(R.string.replace, (dialog, which) -> importSave(save))
+                .setNegativeButton(android.R.string.cancel, (dialog, which) -> finish())
+                .setOnCancelListener(dialog -> finish())
+                .show();
+    }
+
+    private void importSave(byte[] save) {
+        File file = saveFile();
+        file.getParentFile().mkdirs();
+        try (OutputStream out = new FileOutputStream(file)) {
+            out.write(save);
+            showSaveResult(getString(R.string.save_imported));
+        } catch (IOException e) {
+            showSaveResult(e.toString());
+        }
+    }
+
+    private void exportSave() {
+        if (!saveFile().exists()) {
+            showSaveResult(getString(R.string.no_save));
+            return;
+        }
+        Intent create = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        create.addCategory(Intent.CATEGORY_OPENABLE);
+        create.setType("application/octet-stream");
+        create.putExtra(Intent.EXTRA_TITLE, "MHP2NDG.BIN");
+        startActivityForResult(create, EXPORT_SAVE);
+    }
+
+    private void writeSave(Uri target) {
+        try (OutputStream out = getContentResolver().openOutputStream(target, "wt")) {
+            out.write(Files.readAllBytes(saveFile().toPath()));
+            showSaveResult(getString(R.string.save_exported));
+        } catch (IOException | NullPointerException e) {
+            showSaveResult(e.toString());
+        }
+    }
+
+    private void showSaveResult(String text) {
+        message.setText(text);
+        message.setTextSize(17);
+        again.setText(R.string.start);
+        again.setVisibility(View.VISIBLE);
+        choose.setVisibility(View.GONE);
         again.requestFocus();
     }
 
