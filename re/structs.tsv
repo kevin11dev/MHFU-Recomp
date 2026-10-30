@@ -85,6 +85,8 @@ Hunter	0x10f8	s16	timer_10f8	counts down in hunter_update_timers
 Hunter	0x10fa	s16	timer_10fa	counts down in hunter_update_timers (set to 1800)
 Hunter	0x110e	s16	timer_110e	counts down in hunter_update_timers (set to 5400)
 Hunter	0x1112	s16	timer_1112	counts down in hunter_update_timers (set to 1800)
+Hunter	0x1114	s32	bed_save_step	bed_save_update's step: 0 starts saving
+Hunter	0x111c	u8	bed_no_exit_prompt	bed_save_update doesn't ask "Exit game?" while it's set
 Hunter	0x1140	s16	timer_1140	-1 every 10 frames in some states
 Hunter	0x1146	s16	timer_1146	counts down in hunter_update_timers
 Hunter	0x11b4	s16	timer_11b4	counts down in hunter_update_timers (set to 9000)

@@ -326,10 +326,10 @@ index 0000000..da2157f
 +}  // namespace refract::adhoc
 diff --git a/refract/include/refract/frontend.hpp b/refract/include/refract/frontend.hpp
 new file mode 100644
-index 0000000..c34908a
+index 0000000..9b1e459
 --- /dev/null
 +++ b/refract/include/refract/frontend.hpp
-@@ -0,0 +1,86 @@
+@@ -0,0 +1,90 @@
 +#pragma once
 +
 +// Extras of the SDL2 + OpenGL ES host (src/host/sdl_gles.cpp) for an entry point to use before
@@ -414,6 +414,10 @@ index 0000000..c34908a
 +// false if the player quit or closed the window. Keyboard, mouse and game controllers work;
 +// REFRACT_SETTINGS_SCRIPT drives it with an input script (for testing).
 +bool run_launcher(const Launcher& launcher, std::vector<Choice>& choices);
++
++// Closes the game as closing its window does: the frontend stops after this frame. Safe to call
++// from the game's thread, and with any host.
++void request_exit();
 +
 +}  // namespace refract::frontend
 diff --git a/refract/include/refract/psp_sdk_stubs.inc b/refract/include/refract/psp_sdk_stubs.inc
@@ -1157,6 +1161,28 @@ index 7cf13ad..064dc31 100644
    std::atomic<std::uint64_t> submitted_frames_{};
    std::atomic<std::uint64_t> consumed_frames_{};
    std::atomic<std::uint64_t> rendered_frames_{};
+diff --git a/refract/src/host/common.cpp b/refract/src/host/common.cpp
+index f15caac..e2e9707 100644
+--- a/refract/src/host/common.cpp
++++ b/refract/src/host/common.cpp
+@@ -1,5 +1,7 @@
+ #include "host.hpp"
+ 
++#include <refract/frontend.hpp>
++
+ #include <chrono>
+ #include <thread>
+ 
+@@ -24,3 +26,9 @@ void sleep_microseconds(std::uint32_t duration) {
+ }
+ 
+ } // namespace refract::host
++
++namespace refract::frontend {
++
++void request_exit() { host::request_frontend_exit(); }
++
++} // namespace refract::frontend
 diff --git a/refract/src/host/frame_pacer.hpp b/refract/src/host/frame_pacer.hpp
 new file mode 100644
 index 0000000..bbbe9df

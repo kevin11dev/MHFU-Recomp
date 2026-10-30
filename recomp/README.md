@@ -96,11 +96,18 @@ the quest's data goes over PDP port 20001.
 Gameplay features (`src/features.hpp`, `src/features/`) are changes to how the game plays that
 players turn on or off: one file each, describing itself with `MHFU_FEATURE` and registering its
 hooks (`src/hook.hpp`) when it's turned on, so one that is off changes nothing. The launcher adds a
-row for each (Off by default) and keeps the choice as `feature.<key>` in `config.txt`. How to add
+row for each (Off by default, unless the feature says otherwise) and keeps the choice as `feature.<key>` in `config.txt`. How to add
 one: [`docs/features.md`](../docs/features.md). Hold to gather (`features/hold_to_gather.cpp`)
 hooks `hunter_read_pad`: while the hunter stands at a gathering spot with gathers left (on a hunt;
 `quest_gather_points`) holding its button (Circle, or Square with a pickaxe or bug net chosen), it
 counts the button as pressed again, and the game starts the next gather by its own rules.
+Quit Game (`features/quit_game.cpp`, on by default) fills the empty last row of the village's
+START menu (`village_menu_draw`: its text numbers come from tables in `lobby_task`, the label's
+text from `lobby_text`, in the game's language) and, when it's chosen (`village_menu_choose`),
+starts the hunter's bed action (`hunter_bed`) with the bed's prompts and no bed:
+`save_prompt_update` ("Would you like to save?"), then `bed_save_update` (saving and "Exit
+game?"); leaving closes the game (`refract::frontend::request_exit`, as closing the window does)
+where the bed would go back to the title screen.
 
 The right-stick camera (`src/camera.cpp`) hooks the hunting areas' camera update,
 `FUN_08886e50`. The camera manager (pointer at `0x089cbbe4`, the field camera shown while its byte
