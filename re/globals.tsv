@@ -18,6 +18,7 @@
 0x08B59914	video_playing	u32	the 60 fps code runs the game at 60 while this is 0
 0x09A4F060	stage_manager	void*	method 0x28 returns the area's info (+0x3c: 3 cold, 4 hot)
 0x09A4F0C4	players	void*	player_get(players, i): the hunter of player i
+0x09A44C60	save_manager	void*	the save and its prompts (save_prompt_start)
 0x09A0B56C	sound_frame_count	u32	+1 a frame (sound_frame)
 0x09D1A060	collision_world	void*	in game_sub's data; the world collision_sweep_sphere and collision_floor_height work on
 0x08802048	fps60_stamina_every_other	u32	written by the 60 fps code: which call of hunter_add_stamina adds a small change

@@ -41,6 +41,7 @@ Before publishing a fork, release, or build, remove and do not redistribute any 
 | Keyboard and controller support; the launcher also works with a mouse | |
 | Free right-stick camera in hunting areas | |
 | Optional hold-to-gather quality-of-life feature | |
+| Quit Game in the village's START menu: save if you like, then close the game | |
 | Online ad-hoc multiplayer, including PPSSPP compatibility | |
 | Android app for phones and tablets, played with a controller; saves you can export and import | Touch controls on Android |
 
@@ -150,7 +151,7 @@ To update, install the new APK over the old one; your saves stay. Uninstalling t
 
 On Android, play with a controller (the last column). As on the PSP, tapping L turns the camera to face where your hunter faces, and holding it opens the item bar.
 
-The launcher contains the full controls screen and settings for display mode, resolution, graphics (Vulkan or OpenGL), widescreen, frame rate, interpolation, the right-stick camera, hold-to-gather, and multiplayer. Each optional feature is off until you turn it on (except widescreen, which is on by default on Android), so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
+The launcher contains the full controls screen and settings for display mode, resolution, graphics (Vulkan or OpenGL), widescreen, frame rate, interpolation, the right-stick camera, hold-to-gather, Quit Game, and multiplayer. Each optional feature is off until you turn it on (except widescreen, which is on by default on Android, and Quit Game, which only adds a row to the START menu), so you can also play the original way. If something moves too fast or behaves oddly at 60 fps, try 30.
 
 ## Multiplayer
 

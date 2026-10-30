@@ -61,6 +61,15 @@ eboot	0x0880C464	memset	void* memset(void* to, s32 value, u32 size)
 eboot	0x0880C0AC	memcpy_words		copies memory
 eboot	0x0880D9EC	debug_print		prints a debug line (format)
 eboot	0x0880E8F0	sprintf	s32 sprintf(char* to, char* format)
+eboot	0x088915B0	render_text	void render_text(void* renderer, s32 x, s32 y, s32 color, char* format, char* text)	draws a line of text; color 10 is the grey of a choice that can't be made
+eboot	0x08834400	village_menu_open	void village_menu_open(MessageWindow* window)	the START menu in the village (its state is in the message window: open at +0x111d, the row chosen, 0 to 13, at +0x111c)
+eboot	0x08834548	village_menu_close	void village_menu_close(MessageWindow* window)
+eboot	0x0883488C	village_menu_draw	void village_menu_draw(MessageWindow* window, u8 dim)	seven rows a page, their text numbers (lobby_text) from two tables in lobby_task (0x09B051A0, 0x09B051AE); the second page's last is a grey placeholder
+eboot	0x08834B0C	village_menu_update	u32 village_menu_update(MessageWindow* window, u32 pressed)	a frame of the menu: moves between the rows, chooses one (village_menu_choose) or closes; 1 once it's closed
+eboot	0x08834D3C	village_menu_choose	u32 village_menu_choose(MessageWindow* window, u8 row)	0 when the row's screen opens, 1 when it can't be chosen (the buzz)
+eboot	0x088BA760	save_prompt_start	void save_prompt_start(void* save, u32 mode, s32 data)	the save's buffers, for a prompt or saving: mode 1 asks "Would you like to save?" (save_prompt_update), 0x19 saves
+eboot	0x088BF26C	save_prompt_update	s32 save_prompt_update(void* save)	a frame of "Would you like to save?", then "Exit game?" if not: 1 to save, 2 cancelled, 3 to leave without saving; 0 still asking
+eboot	0x088BA860	save_prompt_end	void save_prompt_end(void)	frees save_prompt_start's buffers
 # --- game_sub.ovl (loaded at 0x09C19000 in the village and on hunts) ---
 game_sub	0x09C3AAA8	collision_sweep_sphere		sweeps a sphere (radius in $f12) through the world (a0) from a1 to a2, writing where it stops to a3; flags in t0; non-zero on a hit
 game_sub	0x09C3DA00	collision_floor_height		the height of the floor under a point (a1) in the world (a0), in $f0
@@ -76,6 +85,11 @@ lobby_task	0x09AD45B8	villager_motion_update	void villager_motion_update(Village
 lobby_task	0x09AF8250	lobby_flipbook_update	void lobby_flipbook_update(Flipbook* flipbook)	frame += 1, wrapping
 lobby_task	0x09A87268	elder_talk	void elder_talk(Task* talk)	the Village Elder's dialog
 lobby_task	0x09A9EE50	npc_talk_update		a frame of an NPC's dialog: time since the message started += 1, message_type_out
+lobby_task	0x09A7B720	lobby_text	char* lobby_text(void* lobby, s32 section, u32 number)	the village's text, in the game's language (DATA.BIN files 4781 to 4785: English, French, German, Italian, Spanish)
+lobby_task	0x09AAEEA8	hunter_set_action	void hunter_set_action(Hunter* hunter, u8 group, u8 id)	in the village: starts an action (group 0: 9 the bed)
+lobby_task	0x09AAF0B0	hunter_stand	void hunter_stand(Hunter* hunter, u8 group, u8 id, s32 blend)	back to standing (the bed's "No": group 0, id 6, 0)
+lobby_task	0x09AAB890	hunter_bed	void hunter_bed(Hunter* hunter)	the village's action 9, lying on the bed: save_prompt_update; saving, lying down, then bed_save_update (action 10); leaving goes back to the title screen
+lobby_task	0x09AB13C0	bed_save_update	s32 bed_save_update(Hunter* hunter)	saves (Hunter.bed_save_step 0 starts), says it's saved, then asks "Exit game?" (unless Hunter.bed_no_exit_prompt): 1 to stay, 2 to leave; 0 still going
 # --- game_task.ovl (hunts, loaded at 0x09A5F200) ---
 game_task	0x09A5F280	hunt_task_main	void hunt_task_main(Task* task)	the hunt task's coroutine
 game_task	0x09A61180	hunt_task_states	void hunt_task_states(Task* task)	the hunt's state machine: fades, loading an area (sets GameData.area)...

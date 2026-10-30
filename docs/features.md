@@ -8,7 +8,7 @@ turned on. The settings screen scrolls when there are more rows than fit.
 
 A feature that is off changes nothing: its hooks aren't even registered, so the game runs as it
 did without it. Features are off by default, so the game plays as the original until the player
-chooses otherwise.
+chooses otherwise (Quit Game, which only adds a row to a menu, is the exception).
 
 ## The parts
 
